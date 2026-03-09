@@ -33,10 +33,10 @@
 source .venv/bin/activate
 
 # 运行 GUI
-python gui_main.py
+uv python gui_main.py
 
 # 运行命令行版本
-python main.py --help
+uv python main.py --help
 ```
 
 ## 依赖管理
