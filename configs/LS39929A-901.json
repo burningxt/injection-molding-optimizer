@@ -1,0 +1,46 @@
+{
+    "name": "LS39929A-901",
+    "fixed": {
+        "G": 40,
+        "v1": 30,
+        "v4": 30,
+        "v5": 30,
+        "t1": 1.6,
+        "t2": 1.6,
+        "t3": 0.4,
+        "t4": 0.4,
+        "Tc": 15,
+        "F": 15
+    },
+    "tunable": [
+        {
+            "name": "T",
+            "type": "range",
+            "min": 135,
+            "max": 145,
+            "step": 1
+        },
+        {
+            "name": "p_vp",
+            "type": "range",
+            "min": 800,
+            "max": 1200,
+            "step": 20
+        },
+        {
+            "name": "p_sw",
+            "type": "range",
+            "min": 400,
+            "max": 800,
+            "step": 20
+        },
+        {
+            "name": "Vg",
+            "type": "set",
+            "values": [
+                5,
+                30
+            ]
+        }
+    ]
+}

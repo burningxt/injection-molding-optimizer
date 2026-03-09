@@ -1,0 +1,99 @@
+{
+    "fixed": {
+        "di_resistivity": 16.0
+    },
+    "tunable": [
+        {
+            "name": "一段清洗时间",
+            "type": "range",
+            "targets": [
+                "wash1_time"
+            ],
+            "min": 20.0,
+            "max": 40.0,
+            "step": 1.0
+        },
+        {
+            "name": "一段清洗转速",
+            "type": "range",
+            "targets": [
+                "wash1_speed"
+            ],
+            "min": 400.0,
+            "max": 1000.0,
+            "step": 20.0
+        },
+        {
+            "name": "二段清洗时间",
+            "type": "range",
+            "targets": [
+                "wash2_time"
+            ],
+            "min": 20.0,
+            "max": 40.0,
+            "step": 1.0
+        },
+        {
+            "name": "二段清洗转速",
+            "type": "range",
+            "targets": [
+                "wash2_speed"
+            ],
+            "min": 400.0,
+            "max": 1000.0,
+            "step": 20.0
+        },
+        {
+            "name": "甩干时间",
+            "type": "range",
+            "targets": [
+                "dry_time"
+            ],
+            "min": 70.0,
+            "max": 110.0,
+            "step": 1.0
+        },
+        {
+            "name": "甩干转速",
+            "type": "range",
+            "targets": [
+                "dry_speed"
+            ],
+            "min": 400.0,
+            "max": 1000.0,
+            "step": 20.0
+        },
+        {
+            "name": "DI水压/水流量",
+            "type": "range",
+            "targets": [
+                "di_pressure"
+            ],
+            "min": 4.0,
+            "max": 8.0,
+            "step": 0.5
+        },
+        {
+            "name": "气压/气流量",
+            "type": "range",
+            "targets": [
+                "air_pressure"
+            ],
+            "min": 2.0,
+            "max": 8.0,
+            "step": 0.5
+        }
+    ],
+    "ui_order": [
+        "wash1_time",
+        "wash1_speed",
+        "wash2_time",
+        "wash2_speed",
+        "dry_time",
+        "dry_speed",
+        "di_pressure",
+        "air_pressure",
+        "di_resistivity"
+    ],
+    "name": "CPC-600-WB-清洗"
+}

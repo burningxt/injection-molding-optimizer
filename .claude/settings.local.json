@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rsync:*)",
+      "Bash(python3:*)",
+      "Bash(uv:*)",
+      "Bash(source:*)",
+      "Bash(pip list:*)",
+      "Bash(python:*)",
+      "Bash(.:*)",
+      "Bash(git init:*)",
+      "Bash(git:*)"
+    ]
+  }
+}
