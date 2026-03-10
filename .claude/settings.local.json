@@ -9,7 +9,11 @@
       "Bash(python:*)",
       "Bash(.:*)",
       "Bash(git init:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(chmod +x:*)",
+      "Bash(cp:*)",
+      "Bash(ls:*)",
+      "Bash(/home/xt/Code/InjectionMolding/.gitignore:*)"
     ]
   }
 }
