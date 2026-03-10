@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注塑成型工艺参数智能推荐系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 头部 -->
+        <header class="header">
+            <h1>注塑成型工艺参数智能推荐系统</h1>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">连接中...</span>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 左侧面板：配置 -->
+            <aside class="sidebar">
+                <div class="panel">
+                    <h3>件号选择</h3>
+                    <select id="partSelect" class="form-control">
+                        <option value="">选择件号...</option>
+                    </select>
+                    <button id="refreshPartsBtn" class="btn btn-secondary">刷新列表</button>
+                </div>
+
+                <div class="panel" id="configPanel" style="display: none;">
+                    <h3>算法设置</h3>
+                    <div class="form-group">
+                        <label>初始数据:</label>
+                        <input type="number" id="nInit" class="form-control" value="20" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>批次数:</label>
+                        <input type="number" id="nIter" class="form-control" value="10" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>批次大小:</label>
+                        <input type="number" id="batchSize" class="form-control" value="4" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>运行模式:</label>
+                        <select id="modeSelect" class="form-control">
+                            <option value="manual">正式（手动输入）</option>
+                            <option value="auto">模拟（自动计算）</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="panel" id="paramPanel" style="display: none;">
+                    <h3>参数配置</h3>
+                    <div id="paramList"></div>
+                </div>
+            </aside>
+
+            <!-- 右侧主区域 -->
+            <main class="main-panel">
+                <!-- 控制栏 -->
+                <div class="control-bar">
+                    <button id="startBtn" class="btn btn-primary" disabled>
+                        ▶ 开始寻优
+                    </button>
+                    <button id="stopBtn" class="btn btn-danger" disabled>
+                        ⏹ 停止
+                    </button>
+                    <button id="resetBtn" class="btn btn-secondary">
+                        🗑️ 清除历史
+                    </button>
+                    <span id="sessionInfo" class="session-info"></span>
+                </div>
+
+                <!-- 交互输入区 -->
+                <div class="input-section" id="inputSection" style="display: none;">
+                    <div class="input-card">
+                        <h4>请在机台上试模并输入结果</h4>
+                        <div id="currentParams" class="params-display"></div>
+                        <div class="input-form">
+                            <div class="form-group">
+                                <label>面型评价指标:</label>
+                                <input type="number" id="formErrorInput" class="form-control" step="0.01" placeholder="输入数值">
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <label>
+                                    <input type="checkbox" id="isShrinkInput">
+                                    是否缩水
+                                </label>
+                            </div>
+                            <button id="submitBtn" class="btn btn-primary">提交</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 日志区 -->
+                <div class="log-section">
+                    <h4>运行日志</h4>
+                    <div id="logContainer" class="log-container"></div>
+                    <button id="clearLogBtn" class="btn btn-small">清除日志</button>
+                </div>
+
+                <!-- 历史记录表格 -->
+                <div class="records-section">
+                    <h4>实验记录</h4>
+                    <div id="recordsGrid" class="ag-theme-alpine" style="height: 300px;"></div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

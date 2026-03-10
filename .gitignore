@@ -60,3 +60,8 @@ Desktop.ini
 # 其他
 *.log
 .DS_Store
+# Web app checkpoints and generated files
+web_app/backend/checkpoints/
+web_app/backend/configs/
+web_app/configs/
+web_app/static/
