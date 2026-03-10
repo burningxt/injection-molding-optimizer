@@ -28,22 +28,41 @@
                     <select id="partSelect" class="form-control">
                         <option value="">选择件号...</option>
                     </select>
-                    <button id="refreshPartsBtn" class="btn btn-secondary">刷新列表</button>
+                    <div class="panel-actions" style="margin-top: 0.75rem;">
+                        <button id="refreshPartsBtn" class="btn btn-small btn-secondary">刷新列表</button>
+                        <button id="newPartBtn" class="btn btn-small btn-primary">➕ 新建件号</button>
+                    </div>
                 </div>
 
                 <div class="panel" id="configPanel" style="display: none;">
                     <h3>算法设置</h3>
-                    <div class="form-group">
-                        <label>初始数据:</label>
-                        <input type="number" id="nInit" class="form-control" value="20" min="1" max="100">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>初始数据数量:</label>
+                            <input type="number" id="nInit" class="form-control" value="20" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>来源:</label>
+                            <select id="initSource" class="form-control">
+                                <option value="auto">自动生成</option>
+                                <option value="file">文件导入</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>批次数:</label>
-                        <input type="number" id="nIter" class="form-control" value="10" min="1" max="100">
+                    <div class="form-group" id="initFileGroup" style="display: none;">
+                        <label>选择文件:</label>
+                        <input type="file" id="initExcelFile" class="form-control" accept=".xlsx,.xls,.csv">
+                        <small class="form-hint">支持 Excel (.xlsx, .xls) 或 CSV 格式</small>
                     </div>
-                    <div class="form-group">
-                        <label>批次大小:</label>
-                        <input type="number" id="batchSize" class="form-control" value="4" min="1" max="20">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>批次数:</label>
+                            <input type="number" id="nIter" class="form-control" value="10" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>批次大小:</label>
+                            <input type="number" id="batchSize" class="form-control" value="4" min="1" max="20">
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>运行模式:</label>
@@ -55,8 +74,61 @@
                 </div>
 
                 <div class="panel" id="paramPanel" style="display: none;">
-                    <h3>参数配置</h3>
+                    <div class="panel-header">
+                        <h3>参数配置</h3>
+                        <label class="edit-toggle">
+                            <input type="checkbox" id="editConfigToggle">
+                            <span>✏️ 启用编辑</span>
+                        </label>
+                    </div>
                     <div id="paramList"></div>
+                    <div class="panel-actions" id="paramPanelActions" style="display: none;">
+                        <button id="saveConfigBtn" class="btn btn-small btn-primary">💾 保存配置</button>
+                        <button id="addParamBtn" class="btn btn-small">➕ 添加参数</button>
+                        <button id="linkParamsBtn" class="btn btn-small">🔗 绑定参数</button>
+                    </div>
+                    <div id="linkParamsPanel" class="link-params-panel" style="display: none;">
+                        <div class="link-params-header">
+                            <span>选择要绑定的参数（至少2个）</span>
+                            <button id="cancelLinkBtn" class="btn btn-small">取消</button>
+                        </div>
+                        <div id="linkParamsList" class="link-params-list"></div>
+                        <div class="link-params-actions">
+                            <button id="confirmSyncLinkBtn" class="btn btn-small btn-primary">同步数值绑定</button>
+                            <button id="confirmModeLinkBtn" class="btn btn-small btn-primary">模式选择绑定</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 参数编辑模态框 -->
+                <div id="paramEditModal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h4>编辑参数</h4>
+                            <button class="modal-close" onclick="app.closeParamModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="form-group">
+                                <label>参数名称</label>
+                                <input type="text" id="editParamName" class="form-control" placeholder="输入参数名称">
+                            </div>
+                            <div class="form-group">
+                                <label>参数类型</label>
+                                <select id="editParamType" class="form-control">
+                                    <option value="fixed">固定值</option>
+                                    <option value="range">范围</option>
+                                    <option value="set">离散集合</option>
+                                </select>
+                            </div>
+                            <div id="editParamFields">
+                                <!-- 动态生成的字段 -->
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="app.closeParamModal()">取消</button>
+                            <button class="btn btn-primary" onclick="app.saveParamEdit()">保存</button>
+                        </div>
+                    </div>
                 </div>
             </aside>
 
@@ -67,8 +139,8 @@
                     <button id="startBtn" class="btn btn-primary" disabled>
                         ▶ 开始寻优
                     </button>
-                    <button id="stopBtn" class="btn btn-danger" disabled>
-                        ⏹ 停止
+                    <button id="saveExitBtn" class="btn btn-warning" disabled>
+                        💾 保存退出
                     </button>
                     <button id="resetBtn" class="btn btn-secondary">
                         🗑️ 清除历史
@@ -106,14 +178,17 @@
 
                 <!-- 历史记录表格 -->
                 <div class="records-section">
-                    <h4>实验记录</h4>
                     <div id="recordsGrid" class="ag-theme-alpine" style="height: 300px;"></div>
+                    <div class="records-hint">
+                        提示：双击单元格可编辑；选择行后点击"删除行"可回退到该点；保存后会自动截断更晚批次并重启优化。
+                    </div>
                 </div>
             </main>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>
