@@ -35,6 +35,16 @@ class OptimizationSession:
         """连接 WebSocket"""
         self.websocket = websocket
         await self.send_message(WSMessageType.STATE_UPDATE, self._state_to_dict())
+        # 发送历史记录（始终发送，即使为空数组）
+        if self.state:
+            records = [r.model_dump(mode="json") for r in self.state.all_records]
+            await self.send_message(WSMessageType.HISTORY_RECORDS, {"records": records})
+        # 发送收敛曲线数据
+        if self.state and self.state.y_train:
+            await self.send_message(WSMessageType.CONVERGENCE_DATA, {
+                "y_train": self.state.y_train,
+                "best_so_far": self._compute_best_so_far()
+            })
 
     async def disconnect(self):
         """断开连接"""
@@ -49,11 +59,31 @@ class OptimizationSession:
             await self.websocket.send_json(message.model_dump(mode="json"))
 
     async def send_log(self, message: str, level: str = "info"):
-        """发送日志消息"""
+        """发送日志消息到前端并保存到文件"""
+        # 1. 发送到前端
         await self.send_message(
             WSMessageType.LOG_MESSAGE,
             LogMessageData(level=level, message=message).model_dump()
         )
+
+        # 2. 保存到文件
+        await self._write_log_to_file(level, message)
+
+    async def _write_log_to_file(self, level: str, message: str):
+        """写入日志到文件"""
+        try:
+            import aiofiles
+            log_dir = settings.OUTPUT_DIR / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+
+            log_file = log_dir / f"{self.session_id}.log"
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            async with aiofiles.open(log_file, "a", encoding="utf-8") as f:
+                await f.write(f"[{timestamp}] [{level.upper()}] {message}\n")
+        except Exception as e:
+            # 文件写入失败不影响主流程
+            print(f"[LogFileError] Failed to write log: {e}")
 
     def request_input(self, prompt: str, current_sample: Dict[str, Any]) -> asyncio.Future:
         """请求用户输入，返回 Future"""
@@ -75,18 +105,38 @@ class OptimizationSession:
                 "is_shrink": is_shrink
             })
 
-    def stop(self):
-        """停止优化"""
+    def stop(self, is_save_exit: bool = False):
+        """停止优化
+
+        Args:
+            is_save_exit: 是否是保存退出场景（不显示"取消"等负面信息）
+        """
         self.is_running = False
+        self._is_save_exit = is_save_exit
         self._stop_event.set()
         if self._input_future and not self._input_future.done():
             self._input_future.cancel()
+
+    def is_save_exit(self) -> bool:
+        """检查是否是保存退出场景"""
+        return getattr(self, '_is_save_exit', False)
 
     def _state_to_dict(self) -> Dict[str, Any]:
         """转换状态为字典"""
         if self.state:
             return self.state.model_dump(mode="json")
         return {}
+
+    def _compute_best_so_far(self) -> List[float]:
+        """计算每一步的最佳值（累积最小值）"""
+        if not self.state or not self.state.y_train:
+            return []
+        best_so_far = []
+        current_best = float('inf')
+        for y in self.state.y_train:
+            current_best = min(current_best, y)
+            best_so_far.append(current_best)
+        return best_so_far
 
     async def save_checkpoint(self):
         """保存检查点"""

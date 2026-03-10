@@ -74,20 +74,54 @@ class AsyncExperimentRunner:
         """异步日志"""
         await self.session.send_log(message, level)
 
+    async def _notify_new_record(self, record: ExperimentRecord):
+        """通知前端有新记录"""
+        from ..models.schemas import WSMessageType
+        await self.log(f"[WebSocket] 发送 new_record: stage={record.stage}, form_error={record.form_error}")
+        await self.session.send_message(WSMessageType.NEW_RECORD, {
+            "record": record.model_dump(mode="json")
+        })
+
+    async def _notify_convergence_update(self):
+        """通知前端收敛曲线更新"""
+        from ..models.schemas import WSMessageType
+        if self.state.y_train:
+            best_so_far = []
+            current_best = float('inf')
+            for y in self.state.y_train:
+                current_best = min(current_best, y)
+                best_so_far.append(current_best)
+            await self.session.send_message(WSMessageType.CONVERGENCE_DATA, {
+                "y_train": self.state.y_train,
+                "best_so_far": best_so_far
+            })
+
     async def run(self):
         """运行优化流程"""
         try:
             await self.log(">>> 开始工艺寻优流程...")
             await self.log(f"件号: {self.part_config.name}")
             await self.log(f"初始数据: {self.algo_settings.n_init}, 批次数: {self.algo_settings.n_iter}")
+            # DEBUG: 检查初始 Ph_min_safe
+            await self.log(f"[DEBUG] 初始 Ph_min_safe={self.state.Ph_min_safe}", "info")
 
             # 1. 检查是否需要恢复（resume）
             if self.state.all_records:
                 await self.log(f">>> 检测到 {len(self.state.all_records)} 条历史记录，尝试恢复...")
                 await self._resume_pending_records()
 
-            # 2. 初始化阶段
-            await self._run_initialization()
+            # 2. 检查是否已经完成过初始化阶段
+            has_completed_init = any(
+                r.stage == "init" and r.form_error is not None
+                for r in self.state.all_records
+            )
+
+            if not has_completed_init:
+                await self._run_initialization()
+            else:
+                await self.log(">>> 初始化阶段已完成，跳过")
+                # 重建训练数据（从已有记录）
+                self._rebuild_training_data()
 
             # 3. 迭代优化阶段
             for iteration in range(self.state.iteration, self.algo_settings.n_iter):
@@ -108,7 +142,10 @@ class AsyncExperimentRunner:
             )
 
         except asyncio.CancelledError:
-            await self.log("优化被取消", "warning")
+            if self.session.is_save_exit():
+                await self.log("进度已保存，已安全退出", "info")
+            else:
+                await self.log("优化已停止", "warning")
             raise
         except Exception as e:
             await self.log(f"错误: {str(e)}", "error")
@@ -147,6 +184,10 @@ class AsyncExperimentRunner:
                 self.state.X_train.append(x_norm)
                 self.state.y_train.append(result["form_error"])
 
+            # 关键修复：通知前端新记录和收敛曲线更新
+            await self._notify_new_record(record)
+            await self._notify_convergence_update()
+
             await self.session.save_checkpoint()
 
         await self.log("历史记录补齐完成")
@@ -155,27 +196,64 @@ class AsyncExperimentRunner:
         """运行初始化阶段"""
         await self.log("\n=== 初始化阶段 ===")
 
-        # 使用 Sobol 序列生成初始点
-        from torch.quasirandom import SobolEngine
-
-        dim = len(self.search_space)
-        sobol = SobolEngine(dimension=dim, scramble=True)
-
         init_params_list = []
-        for i in range(self.algo_settings.n_init):
-            # 生成归一化参数
-            x_norm = sobol.draw(1).squeeze().tolist()
 
-            # 转换为物理参数
-            params = self._normalized_to_params(x_norm)
-            init_params_list.append(params)
+        # 检查是否从文件加载初始数据
+        if self.algo_settings.init_mode == 'file' and self.algo_settings.init_excel_path:
+            await self.log(f"> 从文件加载初始数据: {self.algo_settings.init_excel_path}")
+            try:
+                import pandas as pd
+                df = pd.read_excel(self.algo_settings.init_excel_path)
 
-            # 创建记录
-            record = ExperimentRecord(
-                stage="init",
-                params=params,
-            )
-            self.state.all_records.append(record)
+                # 从DataFrame中提取参数
+                tunable_names = [spec.name for spec in self.part_config.tunable]
+                for idx, row in df.iterrows():
+                    params = {}
+                    for name in tunable_names:
+                        if name in row:
+                            params[name] = float(row[name])
+                    # 添加固定参数
+                    params.update(self.part_config.fixed)
+                    init_params_list.append(params)
+
+                    # 创建记录
+                    record = ExperimentRecord(
+                        stage="init",
+                        params=params,
+                    )
+                    self.state.all_records.append(record)
+
+                await self.log(f"> 成功加载 {len(init_params_list)} 条初始数据")
+            except Exception as e:
+                await self.log(f"从文件加载初始数据失败: {e}", "error")
+                await self.log("将使用自动生成模式", "warning")
+                init_params_list = []  # 清空，使用自动生成
+
+        # 如果未从文件加载或加载失败，使用Sobol序列生成
+        if not init_params_list:
+            await self.log(f"> 使用Sobol序列生成 {self.algo_settings.n_init} 个初始采样点")
+            from torch.quasirandom import SobolEngine
+
+            dim = len(self.search_space)
+            sobol = SobolEngine(dimension=dim, scramble=True)
+
+            for i in range(self.algo_settings.n_init):
+                # 生成归一化参数
+                x_norm = sobol.draw(1).squeeze().tolist()
+                # 当 dim=1 时，squeeze() 返回标量，tolist() 返回 float 而非 list
+                if not isinstance(x_norm, list):
+                    x_norm = [x_norm]
+
+                # 转换为物理参数
+                params = self._normalized_to_params(x_norm)
+                init_params_list.append(params)
+
+                # 创建记录
+                record = ExperimentRecord(
+                    stage="init",
+                    params=params,
+                )
+                self.state.all_records.append(record)
 
         # 导出初始试模清单
         await self._export_recommendations(init_params_list, "初始试模清单.xlsx")
@@ -206,21 +284,35 @@ class AsyncExperimentRunner:
                 # 更新安全边界
                 await self._update_safety_boundary(params, result["form_error"], result["is_shrink"])
 
+                # 通知前端新记录和收敛曲线更新
+                await self._notify_new_record(record)
+                await self._notify_convergence_update()
+
         else:  # 模拟模式
+            await self.log(f"> 进入模拟模式，处理 {len(init_params_list)} 个参数")
             for i, params in enumerate(init_params_list):
-                # 模拟计算
-                fe = self._simulate_form_error(params)
+                try:
+                    # 模拟计算
+                    fe = self._simulate_form_error(params)
 
-                record = self.state.all_records[i]
-                record.form_error = fe
-                record.is_shrink = fe > self.algo_settings.shrink_threshold
+                    record = self.state.all_records[i]
+                    record.form_error = fe
+                    record.is_shrink = fe > self.algo_settings.shrink_threshold
 
-                # 重新计算该参数的归一化值（避免使用循环外变量）
-                x_norm_i = self._params_to_normalized(params)
-                self.state.X_train.append(x_norm_i)
-                self.state.y_train.append(fe)
+                    # 重新计算该参数的归一化值（避免使用循环外变量）
+                    x_norm_i = self._params_to_normalized(params)
+                    self.state.X_train.append(x_norm_i)
+                    self.state.y_train.append(fe)
 
-                await self.log(f"  模拟结果: form_error={fe:.4f}")
+                    await self.log(f"  模拟结果 [{i+1}/{len(init_params_list)}]: form_error={fe:.4f}")
+
+                    # 通知前端新记录和收敛曲线更新
+                    await self._notify_new_record(record)
+                    await self._notify_convergence_update()
+                except Exception as e:
+                    await self.log(f"  错误 [{i+1}]: {str(e)}", "error")
+                    import traceback
+                    await self.log(f"  {traceback.format_exc()}", "error")
 
         # 更新最佳结果
         self._update_best_result()
@@ -358,6 +450,10 @@ class AsyncExperimentRunner:
                 # 更新安全边界
                 await self._update_safety_boundary(params, result["form_error"], result["is_shrink"])
 
+                # 通知前端新记录和收敛曲线更新
+                await self._notify_new_record(record)
+                await self._notify_convergence_update()
+
                 # 更新最佳结果
                 self._update_best_result()
 
@@ -375,6 +471,10 @@ class AsyncExperimentRunner:
                 self.state.y_train.append(fe)
 
                 await self.log(f"  模拟结果: form_error={fe:.4f}")
+
+                # 通知前端新记录和收敛曲线更新
+                await self._notify_new_record(record)
+                await self._notify_convergence_update()
 
             self._update_best_result()
 
@@ -401,9 +501,14 @@ class AsyncExperimentRunner:
 
         基于 Ph_min_safe 安全边界，检查每组参数的保压是否安全。
         """
+        # DEBUG: 检查 Ph_min_safe 状态
         if not self.state.Ph_min_safe:
             # 没有安全边界数据，全部通过
             return [True] * len(params_list)
+
+        # DEBUG: 记录 Ph_min_safe 内容
+        import asyncio
+        asyncio.create_task(self.log(f"[DEBUG] Ph_min_safe={self.state.Ph_min_safe}", "info"))
 
         # 找到温度索引和保压索引
         temp_idx = None
@@ -447,26 +552,13 @@ class AsyncExperimentRunner:
         """更新安全边界（防止缩水）
 
         当检测到缩水时，更新该温度下的最小安全保压值。
+        只有在检测到缩水时才更新，非缩水时不更新（因为不知道临界值在哪）。
         """
+        # DEBUG: 记录调用情况
+        await self.log(f"[DEBUG] _update_safety_boundary called: is_shrink={is_shrink}, Ph_min_safe before={self.state.Ph_min_safe}", "info")
         if not is_shrink:
-            # 非缩水点，可以更新安全边界
-            temp_idx = None
-            pressure_idx = None
-            for i, spec in enumerate(self.part_config.tunable):
-                if spec.name in ['T', 'Tm']:
-                    temp_idx = i
-                elif spec.name in ['p_sw', 'Ph', 'ph']:
-                    pressure_idx = i
-
-            if temp_idx is not None and pressure_idx is not None:
-                x_norm = self._params_to_normalized(params)
-                temp_val = x_norm[temp_idx] if temp_idx < len(x_norm) else None
-                pressure_val = x_norm[pressure_idx] if pressure_idx < len(x_norm) else None
-
-                if temp_val is not None and pressure_val is not None:
-                    # 更新该温度下的最大安全保压（非缩水时的保压）
-                    current_max = self.state.Ph_min_safe.get(temp_val, 0.0)
-                    self.state.Ph_min_safe[temp_val] = max(current_max, pressure_val)
+            # 非缩水点：不能更新安全边界
+            # 原因：只知道"这个保压值安全"，但不知道"多低的保压就不安全了"
             return
 
         # 检测到缩水，更新安全边界
@@ -485,9 +577,12 @@ class AsyncExperimentRunner:
 
             if temp_val is not None and pressure_val is not None:
                 # 设置该温度下的最小安全保压（缩水时的保压 + 小 margin）
+                # 原理：缩水说明当前保压不够，需要记录"必须超过这个值"
                 current_min = self.state.Ph_min_safe.get(temp_val, float('inf'))
-                self.state.Ph_min_safe[temp_val] = min(current_min, pressure_val + 0.05)
-                await self.log(f"  更新安全边界: T={temp_val:.2f}, Ph_min={self.state.Ph_min_safe[temp_val]:.2f}", "warning")
+                new_min = pressure_val + 0.05
+                if new_min < current_min:
+                    self.state.Ph_min_safe[temp_val] = new_min
+                    await self.log(f"  更新安全边界: T={temp_val:.2f}, Ph_min>={new_min:.2f} (检测到缩水)", "warning")
 
     def _params_to_normalized(self, params: Dict[str, Any]) -> List[float]:
         """将物理参数转换为归一化值"""
@@ -623,6 +718,23 @@ class AsyncExperimentRunner:
                 Vg=Vg,
                 noise_std=0.0,
             )
+
+    def _rebuild_training_data(self):
+        """从历史记录重建训练数据"""
+        self.state.X_train = []
+        self.state.y_train = []
+
+        for record in self.state.all_records:
+            if record.form_error is not None and not record.is_shrink:
+                try:
+                    x_norm = self._params_to_normalized(record.params)
+                    self.state.X_train.append(x_norm)
+                    self.state.y_train.append(record.form_error)
+                except Exception:
+                    continue
+
+        self._update_best_result()
+        self.log(f"> 重建训练数据: {len(self.state.X_train)} 条")
 
     def _update_best_result(self):
         """更新最佳结果"""

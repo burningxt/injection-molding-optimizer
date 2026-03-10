@@ -76,7 +76,7 @@ class OptimizationState(BaseModel):
     # BO 训练数据
     X_train: List[List[float]] = Field(default_factory=list)
     y_train: List[float] = Field(default_factory=list)
-    Ph_min_safe: Dict[str, float] = Field(default_factory=dict)
+    Ph_min_safe: Dict[Union[str, int, float], float] = Field(default_factory=dict)
 
     # 当前批次
     current_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
@@ -97,6 +97,7 @@ class WSMessageType(str, Enum):
     # 客户端 -> 服务器
     START_OPTIMIZATION = "start_optimization"
     STOP_OPTIMIZATION = "stop_optimization"
+    SAVE_AND_EXIT = "save_and_exit"
     SUBMIT_EVALUATION = "submit_evaluation"
     UPDATE_CONFIG = "update_config"
 
@@ -108,6 +109,9 @@ class WSMessageType(str, Enum):
     LOG_MESSAGE = "log_message"
     STATE_UPDATE = "state_update"
     ERROR = "error"
+    HISTORY_RECORDS = "history_records"
+    CONVERGENCE_DATA = "convergence_data"
+    NEW_RECORD = "new_record"
 
 
 class WSMessage(BaseModel):
