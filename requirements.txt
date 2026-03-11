@@ -1,4 +1,29 @@
 # 注塑工艺智能推荐系统 - Python 依赖清单
+# 安装命令: uv pip install -r requirements.txt 或 pip install -r requirements.txt
+
+# 核心依赖 - 贝叶斯优化
+torch>=2.0.0
+botorch>=0.9.0
+gpytorch>=1.11
+
+# 数据处理
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+
+# Web 后端框架 (FastAPI)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# 机器学习工具
+scikit-learn>=1.3.0
+
+# GUI (tkinter 版本)
+# tkinter 是 Python 标准库，无需单独安装
 # 安装命令: pip install -r requirements.txt
 
 # 核心依赖 - 贝叶斯优化
