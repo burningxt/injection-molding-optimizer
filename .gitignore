@@ -66,12 +66,10 @@ web_app/backend/configs/
 web_app/configs/
 web_app/static/
 
-# Data files
-data/checkpoints/*.pkl
-data/records/*.xlsx
-data/records/*.xls
-!data/templates/
-!data/records/.gitkeep
+# Data files (entire directory)
+data/
+!data/.gitkeep
+!data/**/.gitkeep
 
 # Scripts
 push_to_github.sh
