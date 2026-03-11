@@ -65,3 +65,13 @@ web_app/backend/checkpoints/
 web_app/backend/configs/
 web_app/configs/
 web_app/static/
+
+# Data files
+data/checkpoints/*.pkl
+data/records/*.xlsx
+data/records/*.xls
+!data/templates/
+!data/records/.gitkeep
+
+# Scripts
+push_to_github.sh
