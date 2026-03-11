@@ -23,5 +23,6 @@
       "Bash(lsof -i :8000 2>/dev/null || netstat -tlnp 2>/dev/null | grep 8000 || ss -tlnp | grep 8000)",
       "Bash(pkill -f uvicorn 2>/dev/null; sleep 2; bash start.sh)"
     ]
-  }
+  },
+  "outputStyle": "default"
 }
