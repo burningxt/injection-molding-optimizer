@@ -58,12 +58,106 @@ body {
     display: flex;
     padding: 1rem;
     gap: 1rem;
+    align-items: stretch; /* 让左右两侧等高 */
+    overflow: hidden; /* 防止整体溢出 */
 }
 
 /* 侧边栏 */
 .sidebar {
     width: 380px;
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    overflow: hidden; /* 防止溢出 */
+}
+
+.sidebar .panel {
+    margin-bottom: 0; /* 移除原有的 margin-bottom，使用 gap 替代 */
+}
+
+/* 算法设置面板 - 可调整高度 */
+#configPanel {
+    flex: 0 0 auto;
+    min-height: 200px;
+}
+
+/* 参数配置面板 - 填充剩余空间 */
+#paramPanel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 300px; /* 确保不太扁 */
+}
+
+#paramPanel #paramList {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* 垂直分隔线 */
+.resizer-vertical {
+    width: 8px;
+    background: #e9ecef;
+    cursor: col-resize;
+    flex-shrink: 0;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.resizer-vertical:hover {
+    background: #adb5bd;
+}
+
+.resizer-vertical::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 30px;
+    background: #868e96;
+    border-radius: 1px;
+}
+
+/* 水平分隔线 */
+.resizer-horizontal {
+    height: 8px;
+    background: #e9ecef;
+    cursor: row-resize;
+    flex-shrink: 0;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.resizer-horizontal:hover {
+    background: #adb5bd;
+}
+
+.resizer-horizontal::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 2px;
+    background: #868e96;
+    border-radius: 1px;
+}
+
+/* 拖拽时的遮罩层 */
+.resizing-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9999;
+    cursor: inherit;
 }
 
 .panel {
@@ -220,6 +314,31 @@ body {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* 控制栏 - 固定高度 */
+.control-bar {
+    flex: 0 0 auto;
+}
+
+/* 输入区 - 可调整高度 */
+.input-section {
+    flex: 0 0 auto;
+    min-height: 250px;
+}
+
+/* 日志区 - 可调整高度 */
+.log-section {
+    flex: 0 0 auto;
+    min-height: 200px;
+}
+
+/* 记录区 - 填充剩余空间 */
+.records-section {
+    flex: 1;
+    min-height: 300px; /* 确保不太扁 */
 }
 
 /* 控制栏 */
@@ -247,6 +366,14 @@ body {
     border-radius: 8px;
     padding: 1.25rem;
     animation: slideDown 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.input-card {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
 }
 
 @keyframes slideDown {
@@ -269,12 +396,73 @@ body {
     background: white;
     padding: 1rem;
     border-radius: 6px;
-    margin-bottom: 1rem;
-    font-family: monospace;
-    font-size: 0.85rem;
-    white-space: pre-wrap;
-    max-height: 200px;
+    margin-bottom: 0.5rem;
+    max-height: 300px;
     overflow-y: auto;
+}
+
+/* 等待提示样式 */
+.waiting-prompt {
+    text-align: center;
+    color: #6c757d;
+    padding: 2rem;
+    font-size: 1rem;
+}
+
+/* 批次参数表格样式 */
+.batch-params-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.batch-params-table th,
+.batch-params-table td {
+    padding: 0.5rem 0.4rem;
+    border: 1px solid #dee2e6;
+    text-align: center;
+}
+
+.batch-params-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #495057;
+    position: sticky;
+    top: 0;
+}
+
+.batch-params-table tr:hover {
+    background: #f8f9fa;
+}
+
+.batch-params-table .current-group {
+    background: #fff9db !important;
+    font-weight: 600;
+}
+
+.batch-params-table .current-group td {
+    border-top: 2px solid #ffd43b;
+    border-bottom: 2px solid #ffd43b;
+}
+
+.batch-params-table .current-group td:first-child {
+    border-left: 2px solid #ffd43b;
+}
+
+.batch-params-table .current-group td:last-child {
+    border-right: 2px solid #ffd43b;
+}
+
+/* 输入进度显示 */
+.input-progress {
+    text-align: center;
+    color: #1864ab;
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin: 0.5rem 0 1rem 0;
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 4px;
 }
 
 .input-form {
@@ -352,11 +540,21 @@ body {
     border-radius: 8px;
     padding: 1.25rem;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
 }
 
 .records-section h4 {
     margin-bottom: 0.75rem;
     color: #495057;
+}
+
+.records-section #recordsGrid {
+    flex: 1;
+    min-height: 0;
 }
 
 .records-header {

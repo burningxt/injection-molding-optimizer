@@ -266,12 +266,25 @@ class AsyncExperimentRunner:
         if self.algo_settings.mode == "manual":
             await self.log(f"\n>>> 请在机台上试模，并输入 {self.algo_settings.n_init} 组参数的评价指标")
 
+            # 构建批次信息（初始阶段批次号为0）
+            init_batch_info = {
+                "batch_num": 0,
+                "total_groups": len(init_params_list),
+                "batch_params": init_params_list
+            }
+
             for i, params in enumerate(init_params_list):
                 if not self.session.is_running:
                     return
 
                 await self.log(f"\n--- 第 {i+1}/{self.algo_settings.n_init} 组 ---")
-                result = await self._request_evaluation(params, i)
+
+                # 传递当前组号和批次信息
+                batch_info = {
+                    **init_batch_info,
+                    "group_num": i + 1  # 1-based
+                }
+                result = await self._request_evaluation(params, i, batch_info)
 
                 # 更新记录
                 record = self.state.all_records[i]
@@ -433,12 +446,26 @@ class AsyncExperimentRunner:
             await self.log(f">>> 请试模并输入 {len(rec_params_list)} 组参数的评价指标")
 
             start_idx = len(self.state.all_records) - len(rec_params_list)
+
+            # 构建批次信息（迭代阶段批次号从1开始）
+            iter_batch_info = {
+                "batch_num": iteration + 1,
+                "total_groups": len(rec_params_list),
+                "batch_params": rec_params_list
+            }
+
             for i, params in enumerate(rec_params_list):
                 if not self.session.is_running:
                     return
 
                 await self.log(f"\n--- 批次内第 {i+1}/{len(rec_params_list)} 组 ---")
-                result = await self._request_evaluation(params, start_idx + i)
+
+                # 传递当前组号和批次信息
+                batch_info = {
+                    **iter_batch_info,
+                    "group_num": i + 1  # 1-based
+                }
+                result = await self._request_evaluation(params, start_idx + i, batch_info)
 
                 # 更新记录
                 record = self.state.all_records[start_idx + i]
@@ -482,8 +509,19 @@ class AsyncExperimentRunner:
 
             self._update_best_result()
 
-    async def _request_evaluation(self, params: Dict[str, Any], record_idx: int) -> Dict[str, Any]:
-        """请求用户评估"""
+    async def _request_evaluation(
+        self,
+        params: Dict[str, Any],
+        record_idx: int,
+        batch_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """请求用户评估
+
+        Args:
+            params: 当前组参数
+            record_idx: 记录索引
+            batch_info: 批次信息，包含 batch_num, group_num, total_groups, batch_params
+        """
         # 格式化参数显示
         display_params = self._format_params(params)
 
@@ -491,8 +529,8 @@ class AsyncExperimentRunner:
 {display_params}
 输入面型评价指标（数值）："""
 
-        # 通过 WebSocket 请求输入
-        future = self.session.request_input(prompt, params)
+        # 通过 WebSocket 请求输入，传递批次信息
+        future = self.session.request_input(prompt, params, batch_info)
 
         try:
             result = await future

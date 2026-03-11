@@ -73,6 +73,9 @@
                     </div>
                 </div>
 
+                <!-- 左侧水平分隔线：算法设置和参数配置之间 -->
+                <div class="resizer-horizontal" id="resizerConfigParam" style="display: none;"></div>
+
                 <div class="panel" id="paramPanel" style="display: none;">
                     <div class="panel-header">
                         <h3>参数配置</h3>
@@ -132,6 +135,9 @@
                 </div>
             </aside>
 
+            <!-- 垂直分隔线：侧边栏和主区域之间 -->
+            <div class="resizer-vertical" id="resizerVertical"></div>
+
             <!-- 右侧主区域 -->
             <main class="main-panel">
                 <!-- 控制栏 -->
@@ -149,13 +155,23 @@
                 </div>
 
                 <!-- 交互输入区 -->
-                <div class="input-section" id="inputSection" style="display: none;">
+                <div class="input-section" id="inputSection">
                     <div class="input-card">
                         <h4>请在机台上试模并输入结果</h4>
-                        <div id="currentParams" class="params-display"></div>
-                        <div class="input-form">
+                        <div id="currentParams" class="params-display">
+                            <div id="waitingPrompt" class="waiting-prompt">
+                                请配置参数并点击"开始寻优"
+                            </div>
+                            <table id="batchParamsTable" class="batch-params-table" style="display: none;">
+                                <!-- 动态生成 -->
+                            </table>
+                        </div>
+                        <div class="input-progress" id="inputProgress" style="display: none;">
+                            正在输入：第 <span id="currentGroupNum">1</span> / <span id="totalGroups">4</span> 组
+                        </div>
+                        <div class="input-form" id="inputForm" style="display: none;">
                             <div class="form-group">
-                                <label>面型评价指标:</label>
+                                <label id="formErrorLabel">面型评价指标:</label>
                                 <input type="number" id="formErrorInput" class="form-control" step="0.01" placeholder="输入数值">
                             </div>
                             <div class="form-group checkbox-group">
@@ -169,12 +185,18 @@
                     </div>
                 </div>
 
+                <!-- 右侧水平分隔线1：输入区和日志区之间 -->
+                <div class="resizer-horizontal" id="resizerInputLog"></div>
+
                 <!-- 日志区 -->
                 <div class="log-section">
                     <h4>运行日志</h4>
                     <div id="logContainer" class="log-container"></div>
                     <button id="clearLogBtn" class="btn btn-small">清除日志</button>
                 </div>
+
+                <!-- 右侧水平分隔线2：日志区和实验记录之间 -->
+                <div class="resizer-horizontal" id="resizerLogRecords"></div>
 
                 <!-- 历史记录表格 -->
                 <div class="records-section">

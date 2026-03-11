@@ -37,10 +37,24 @@ class OptimizationApp {
         this.init();
     }
 
+    /**
+     * 智能格式化数值显示
+     * - 整数显示为整数（如 100）
+     * - 小数保留适当精度并去除末尾的0
+     */
+    formatNumber(value) {
+        if (typeof value !== 'number') return value;
+        // 如果是整数，显示整数
+        if (Number.isInteger(value)) return value.toString();
+        // 如果是小数，保留4位小数并去除末尾的0
+        return parseFloat(value.toFixed(4)).toString();
+    }
+
     init() {
         this.initUI();
         this.initWebSocket();
         this.initAGGrid();
+        this.initResizableLayout();
         this.loadPartList();
 
         // 心跳检测
@@ -407,11 +421,12 @@ class OptimizationApp {
             case 'optimization_completed':
                 this.isRunning = false;
                 this.updateControlButtons();
-                document.getElementById('inputSection').style.display = 'none';
+                // 不再隐藏输入区，显示完成状态
+                this.showCompletedState();
                 break;
 
             case 'params_ready':
-                this.showInputSection(data);
+                this.updateInputSection(data);
                 break;
 
             case 'state_update':
@@ -599,9 +614,20 @@ class OptimizationApp {
         };
 
         // 合并固定参数和可调参数为一个统一的数组
+        // 注意：可调参数(tunable)在前，与试模表格顺序一致
         const allParams = [];
 
-        // 添加固定参数（转换为统一格式）
+        // 先添加可调参数（与试模表格顺序一致）
+        if (this.partConfig.tunable) {
+            this.partConfig.tunable.forEach(param => {
+                allParams.push({
+                    ...param,
+                    source: 'tunable'
+                });
+            });
+        }
+
+        // 再添加固定参数（转换为统一格式）
         if (this.partConfig.fixed) {
             for (const [name, value] of Object.entries(this.partConfig.fixed)) {
                 allParams.push({
@@ -613,26 +639,23 @@ class OptimizationApp {
             }
         }
 
-        // 添加可调参数
-        if (this.partConfig.tunable) {
-            this.partConfig.tunable.forEach(param => {
-                allParams.push({
-                    ...param,
-                    source: 'tunable'
-                });
-            });
-        }
-
         if (allParams.length === 0) {
             container.innerHTML = '<div class="param-empty">暂无参数配置</div>';
             return;
         }
 
         // 按 ui_order 排序（如果存在）
+        // 确保 tunable 参数在前，fixed 参数在后，各自组内按 ui_order 排序
         if (this.partConfig.ui_order && this.partConfig.ui_order.length > 0) {
             allParams.sort((a, b) => {
+                // 首先按 source 分组：tunable 在前，fixed 在后
+                if (a.source !== b.source) {
+                    return a.source === 'tunable' ? -1 : 1;
+                }
+                // 同组内按 ui_order 排序
                 const idxA = this.partConfig.ui_order.indexOf(a.name);
                 const idxB = this.partConfig.ui_order.indexOf(b.name);
+                if (idxA === -1 && idxB === -1) return 0;
                 if (idxA === -1) return 1;
                 if (idxB === -1) return -1;
                 return idxA - idxB;
@@ -651,7 +674,7 @@ class OptimizationApp {
                 <th style="width: 25%">参数名</th>
                 <th style="width: 15%">类型</th>
                 <th style="width: 30%">范围</th>
-                <th style="width: 15%">颗粒度</th>
+                <th style="width: 15%">粒度</th>
                 ${this.isEditingConfig ? '<th style="width: 15%">操作</th>' : ''}
             </tr>
         `;
@@ -1142,28 +1165,104 @@ class OptimizationApp {
         }
     }
 
-    showInputSection(data) {
-        const section = document.getElementById('inputSection');
-        const paramsDisplay = document.getElementById('currentParams');
+    updateInputSection(data) {
+        // 隐藏等待提示，显示表格、进度和表单
+        document.getElementById('waitingPrompt').style.display = 'none';
+        document.getElementById('batchParamsTable').style.display = 'table';
+        document.getElementById('inputProgress').style.display = 'block';
+        document.getElementById('inputForm').style.display = 'flex';
 
-        // 显示参数
-        const params = data.current_sample;
-        let paramsText = '';
-        for (const [key, value] of Object.entries(params)) {
-            paramsText += `${key}: ${value}\n`;
+        // 检查是否有批次信息
+        if (data.batch_info) {
+            // 使用表格形式显示批次参数
+            this.renderBatchParamsTable(data.batch_info);
+
+            // 更新进度显示
+            const currentGroup = data.batch_info.group_num;
+            const totalGroups = data.batch_info.total_groups;
+            document.getElementById('currentGroupNum').textContent = currentGroup;
+            document.getElementById('totalGroups').textContent = totalGroups;
+
+            // 更新标签文本
+            const batchNum = data.batch_info.batch_num;
+            const batchLabel = batchNum === 0 ? '初始' : `第${batchNum}`;
+            document.getElementById('formErrorLabel').textContent =
+                `面型评价指标（${batchLabel}批次第${currentGroup}组）:`;
+        } else {
+            // 降级：使用原来的文本显示方式
+            const params = data.current_sample;
+            let paramsText = '';
+            for (const [key, value] of Object.entries(params)) {
+                paramsText += `${key}: ${value}\n`;
+            }
+            document.getElementById('currentParams').innerHTML = `<pre>${paramsText}</pre>`;
+            document.getElementById('formErrorLabel').textContent = '面型评价指标:';
         }
-        paramsDisplay.textContent = paramsText;
 
-        // 显示输入区
-        section.style.display = 'block';
-        section.scrollIntoView({ behavior: 'smooth' });
-
-        // 清空输入
-        document.getElementById('formErrorInput').value = '';
-        document.getElementById('isShrinkInput').checked = false;
-        document.getElementById('formErrorInput').focus();
+        // 不再显示/隐藏整个区域，避免闪烁
+        // 不再自动滚动，避免干扰用户
+        // 不清空输入和聚焦，这些在提交后处理
 
         this.addLogEntry('info', data.prompt);
+    }
+
+    /**
+     * 显示优化完成状态
+     */
+    showCompletedState() {
+        // 显示完成提示，隐藏其他元素
+        document.getElementById('waitingPrompt').textContent = '优化已完成';
+        document.getElementById('waitingPrompt').style.display = 'block';
+        document.getElementById('batchParamsTable').style.display = 'none';
+        document.getElementById('inputProgress').style.display = 'none';
+        document.getElementById('inputForm').style.display = 'none';
+    }
+
+    /**
+     * 渲染批次参数表格
+     * @param {Object} batchInfo - 批次信息
+     * @param {number} batchInfo.batch_num - 批次号
+     * @param {number} batchInfo.group_num - 当前组号
+     * @param {number} batchInfo.total_groups - 总组数
+     * @param {Array} batchInfo.batch_params - 批次参数列表
+     */
+    renderBatchParamsTable(batchInfo) {
+        const table = document.getElementById('batchParamsTable');
+        const { group_num, batch_params } = batchInfo;
+
+        // 获取所有参数名（从第一组参数提取）
+        const paramKeys = Object.keys(batch_params[0]);
+
+        // 构建表头
+        let theadHTML = '<thead><tr><th>组号</th>';
+        paramKeys.forEach(key => {
+            // 使用 PARAM_DISPLAY_NAMES 映射中文名
+            const displayName = PARAM_DISPLAY_NAMES[key] || key;
+            theadHTML += `<th>${displayName}</th>`;
+        });
+        theadHTML += '</tr></thead>';
+
+        // 构建表体
+        let tbodyHTML = '<tbody>';
+        batch_params.forEach((params, index) => {
+            const groupNum = index + 1;
+            const isCurrentGroup = groupNum === group_num;
+            const rowClass = isCurrentGroup ? 'current-group' : '';
+
+            let rowHTML = `<tr class="${rowClass}"><td>${groupNum}</td>`;
+            paramKeys.forEach(key => {
+                const value = params[key];
+                // 智能格式化数值显示
+                const displayValue = this.formatNumber(value);
+                rowHTML += `<td>${displayValue}</td>`;
+            });
+            rowHTML += '</tr>';
+            tbodyHTML += rowHTML;
+        });
+        tbodyHTML += '</tbody>';
+
+        // 设置表格内容
+        table.innerHTML = theadHTML + tbodyHTML;
     }
 
     submitEvaluation() {
@@ -1180,7 +1279,11 @@ class OptimizationApp {
             is_shrink: isShrink
         });
 
-        document.getElementById('inputSection').style.display = 'none';
+        // 不再隐藏整个输入区，只清空输入准备下一组
+        document.getElementById('formErrorInput').value = '';
+        document.getElementById('isShrinkInput').checked = false;
+        document.getElementById('formErrorInput').focus();
+
         this.addLogEntry('info', `已提交: form_error=${formError}, is_shrink=${isShrink}`);
     }
 
@@ -1267,7 +1370,10 @@ class OptimizationApp {
                         valueFormatter: (params) => {
                             if (params.value === null || params.value === undefined) return '';
                             const num = parseFloat(params.value);
-                            return isNaN(num) ? params.value : num.toFixed(4);
+                            if (isNaN(num)) return params.value;
+                            // 智能格式化：整数显示整数，小数去除末尾0
+                            if (Number.isInteger(num)) return num.toString();
+                            return parseFloat(num.toFixed(4)).toString();
                         }
                     },
                     {
@@ -1939,7 +2045,7 @@ class OptimizationApp {
                 { field: 'stage', headerName: '阶段', width: 100, editable: false },
                 ...paramKeys.map(key => ({
                     field: `params.${key}`,
-                    headerName: key,
+                    headerName: PARAM_DISPLAY_NAMES[key] || key,
                     valueGetter: params => params.data.params?.[key],
                     valueSetter: params => {
                         if (!params.data.params) params.data.params = {};
@@ -1961,7 +2067,10 @@ class OptimizationApp {
                     valueFormatter: (params) => {
                         if (params.value === null || params.value === undefined || params.value === '-') return '';
                         const num = parseFloat(params.value);
-                        return isNaN(num) ? params.value : num.toFixed(4);
+                        if (isNaN(num)) return params.value;
+                        // 智能格式化：整数显示整数，小数去除末尾0
+                        if (Number.isInteger(num)) return num.toString();
+                        return parseFloat(num.toFixed(4)).toString();
                     }
                 },
                 {
@@ -2103,6 +2212,133 @@ class OptimizationApp {
     // 在关键操作后保存状态
     onStateChange() {
         this.saveUIState();
+    }
+
+    /**
+     * 初始化可拖拽调整大小功能
+     */
+    initResizableLayout() {
+        // 垂直分隔线（侧边栏宽度）
+        this.initVerticalResizer('resizerVertical', '.sidebar', 250, 500, 'sidebarWidth');
+
+        // 左侧水平分隔线（算法设置和参数配置之间）
+        this.initHorizontalResizer('resizerConfigParam', '#configPanel', '#paramPanel', 150, 400, 'configPanelHeight');
+
+        // 右侧水平分隔线（输入区和日志区之间）
+        this.initHorizontalResizer('resizerInputLog', '.input-section', '.log-section', 200, 500, 'inputSectionHeight');
+
+        // 右侧水平分隔线（日志区和实验记录之间）
+        this.initHorizontalResizer('resizerLogRecords', '.log-section', '.records-section', 150, 400, 'logSectionHeight');
+    }
+
+    /**
+     * 初始化垂直分隔线（调整宽度）
+     */
+    initVerticalResizer(resizerId, targetSelector, minSize, maxSize, storageKey) {
+        const resizer = document.getElementById(resizerId);
+        if (!resizer) return;
+
+        let startX, startWidth;
+        const targetEl = document.querySelector(targetSelector);
+
+        // 恢复保存的宽度
+        const savedWidth = localStorage.getItem(storageKey);
+        if (savedWidth) {
+            targetEl.style.width = savedWidth + 'px';
+        }
+
+        resizer.addEventListener('mousedown', (e) => {
+            startX = e.clientX;
+            startWidth = parseInt(document.defaultView.getComputedStyle(targetEl).width, 10);
+
+            // 添加遮罩层
+            const overlay = document.createElement('div');
+            overlay.className = 'resizing-overlay';
+            overlay.style.cursor = 'col-resize';
+            document.body.appendChild(overlay);
+
+            const doDrag = (e) => {
+                const newWidth = startWidth + e.clientX - startX;
+                if (newWidth >= minSize && newWidth <= maxSize) {
+                    targetEl.style.width = newWidth + 'px';
+                }
+            };
+
+            const stopDrag = () => {
+                document.removeEventListener('mousemove', doDrag);
+                document.removeEventListener('mouseup', stopDrag);
+                // 保存宽度
+                localStorage.setItem(storageKey, parseInt(document.defaultView.getComputedStyle(targetEl).width, 10));
+                overlay.remove();
+            };
+
+            document.addEventListener('mousemove', doDrag);
+            document.addEventListener('mouseup', stopDrag);
+        });
+    }
+
+    /**
+     * 初始化水平分隔线（调整高度）
+     */
+    initHorizontalResizer(resizerId, topSelector, bottomSelector, minSize, maxSize, storageKey) {
+        const resizer = document.getElementById(resizerId);
+        if (!resizer) return;
+
+        // 初始隐藏左侧分隔线（因为对应面板可能隐藏）
+        if (resizerId === 'resizerConfigParam') {
+            // 监听面板显示状态
+            const observer = new MutationObserver(() => {
+                const configPanel = document.getElementById('configPanel');
+                const paramPanel = document.getElementById('paramPanel');
+                if (configPanel.style.display !== 'none' && paramPanel.style.display !== 'none') {
+                    resizer.style.display = 'block';
+                } else {
+                    resizer.style.display = 'none';
+                }
+            });
+            const configPanel = document.getElementById('configPanel');
+            if (configPanel) {
+                observer.observe(configPanel, { attributes: true, attributeFilter: ['style'] });
+            }
+        }
+
+        let startY, startHeight;
+        const topEl = document.querySelector(topSelector);
+
+        // 恢复保存的高度
+        const savedHeight = localStorage.getItem(storageKey);
+        if (savedHeight) {
+            topEl.style.flex = '0 0 ' + savedHeight + 'px';
+        }
+
+        resizer.addEventListener('mousedown', (e) => {
+            startY = e.clientY;
+            startHeight = parseInt(document.defaultView.getComputedStyle(topEl).height, 10);
+
+            // 添加遮罩层
+            const overlay = document.createElement('div');
+            overlay.className = 'resizing-overlay';
+            overlay.style.cursor = 'row-resize';
+            document.body.appendChild(overlay);
+
+            const doDrag = (e) => {
+                const newHeight = startHeight + e.clientY - startY;
+                if (newHeight >= minSize && newHeight <= maxSize) {
+                    topEl.style.flex = '0 0 ' + newHeight + 'px';
+                }
+            };
+
+            const stopDrag = () => {
+                document.removeEventListener('mousemove', doDrag);
+                document.removeEventListener('mouseup', stopDrag);
+                // 保存高度
+                localStorage.setItem(storageKey, parseInt(document.defaultView.getComputedStyle(topEl).height, 10));
+                overlay.remove();
+            };
+
+            document.addEventListener('mousemove', doDrag);
+            document.addEventListener('mouseup', stopDrag);
+        });
     }
 }
 
