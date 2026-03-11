@@ -79,7 +79,7 @@ body {
 /* 算法设置面板 - 可调整高度 */
 #configPanel {
     flex: 0 0 auto;
-    min-height: 200px;
+    min-height: 120px;
 }
 
 /* 参数配置面板 - 填充剩余空间 */
@@ -88,7 +88,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    min-height: 300px; /* 确保不太扁 */
+    min-height: 250px; /* 确保足够显示空间 */
 }
 
 #paramPanel #paramList {
@@ -326,19 +326,13 @@ body {
 /* 输入区 - 可调整高度 */
 .input-section {
     flex: 0 0 auto;
-    min-height: 250px;
+    min-height: 200px;
 }
 
 /* 日志区 - 可调整高度 */
 .log-section {
     flex: 0 0 auto;
-    min-height: 200px;
-}
-
-/* 记录区 - 填充剩余空间 */
-.records-section {
-    flex: 1;
-    min-height: 300px; /* 确保不太扁 */
+    min-height: 120px;
 }
 
 /* 控制栏 */
@@ -397,7 +391,7 @@ body {
     padding: 1rem;
     border-radius: 6px;
     margin-bottom: 0.5rem;
-    max-height: 300px;
+    max-height: 230px;  /* 4组数据+表头的高度 */
     overflow-y: auto;
 }
 
@@ -544,7 +538,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    min-height: 0;
+    min-height: 380px; /* 确保8行+表头显示 */
 }
 
 .records-section h4 {
@@ -877,10 +871,10 @@ body {
     color: #868e96;
 }
 
-/* 参数列表容器滚动 */
+/* 参数列表容器 - 填充可用空间 */
 #paramList {
-    max-height: calc(100vh - 450px);
-    min-height: 200px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
 }
 

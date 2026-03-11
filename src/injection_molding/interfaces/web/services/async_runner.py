@@ -175,8 +175,30 @@ class AsyncExperimentRunner:
             record = self.state.all_records[idx]
             await self.log(f"\n>>> 补齐记录 [{idx+1}/{len(self.state.all_records)}] - {record.stage}")
 
-            # 请求用户输入
-            result = await self._request_evaluation(record.params, idx)
+            # 构建批次信息
+            if record.stage == "init":
+                # 初始阶段
+                init_params_list = [r.params for r in self.state.all_records if r.stage == "init"]
+                batch_info = {
+                    "batch_num": 0,
+                    "group_num": idx + 1,
+                    "total_groups": len(init_params_list),
+                    "batch_params": init_params_list
+                }
+            else:
+                # 迭代阶段
+                batch_num = int(record.stage.split("_")[1]) if "_" in record.stage else 1
+                iter_records = [r for r in self.state.all_records if r.stage == record.stage]
+                start_idx = len(self.state.all_records) - len(iter_records)
+                batch_info = {
+                    "batch_num": batch_num,
+                    "group_num": idx - start_idx + 1,
+                    "total_groups": len(iter_records),
+                    "batch_params": [r.params for r in iter_records]
+                }
+
+            # 请求用户输入（传递批次信息）
+            result = await self._request_evaluation(record.params, idx, batch_info)
 
             # 更新记录
             record.form_error = result["form_error"]

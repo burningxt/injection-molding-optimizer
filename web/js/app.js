@@ -1172,32 +1172,20 @@ class OptimizationApp {
         document.getElementById('inputProgress').style.display = 'block';
         document.getElementById('inputForm').style.display = 'flex';
 
-        // 检查是否有批次信息
-        if (data.batch_info) {
-            // 使用表格形式显示批次参数
-            this.renderBatchParamsTable(data.batch_info);
+        // 使用表格形式显示批次参数
+        this.renderBatchParamsTable(data.batch_info);
 
-            // 更新进度显示
-            const currentGroup = data.batch_info.group_num;
-            const totalGroups = data.batch_info.total_groups;
-            document.getElementById('currentGroupNum').textContent = currentGroup;
-            document.getElementById('totalGroups').textContent = totalGroups;
+        // 更新进度显示
+        const currentGroup = data.batch_info.group_num;
+        const totalGroups = data.batch_info.total_groups;
+        document.getElementById('currentGroupNum').textContent = currentGroup;
+        document.getElementById('totalGroups').textContent = totalGroups;
 
-            // 更新标签文本
-            const batchNum = data.batch_info.batch_num;
-            const batchLabel = batchNum === 0 ? '初始' : `第${batchNum}`;
-            document.getElementById('formErrorLabel').textContent =
-                `面型评价指标（${batchLabel}批次第${currentGroup}组）:`;
-        } else {
-            // 降级：使用原来的文本显示方式
-            const params = data.current_sample;
-            let paramsText = '';
-            for (const [key, value] of Object.entries(params)) {
-                paramsText += `${key}: ${value}\n`;
-            }
-            document.getElementById('currentParams').innerHTML = `<pre>${paramsText}</pre>`;
-            document.getElementById('formErrorLabel').textContent = '面型评价指标:';
-        }
+        // 更新标签文本
+        const batchNum = data.batch_info.batch_num;
+        const batchLabel = batchNum === 0 ? '初始' : `第${batchNum}`;
+        document.getElementById('formErrorLabel').textContent =
+            `面型评价指标（${batchLabel}批次第${currentGroup}组）:`;
 
         // 不再显示/隐藏整个区域，避免闪烁
         // 不再自动滚动，避免干扰用户
