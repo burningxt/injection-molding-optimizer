@@ -331,25 +331,58 @@ class AsyncExperimentRunner:
 
         else:  # 模拟模式
             await self.log(f"> 进入模拟模式，处理 {len(init_params_list)} 个参数")
-            for i, params in enumerate(init_params_list):
-                try:
-                    # 模拟计算
-                    fe = self._simulate_form_error(params)
 
+            # 构建批次信息（初始阶段批次号为0）
+            init_batch_info = {
+                "batch_num": 0,
+                "total_groups": len(init_params_list),
+                "batch_params": init_params_list
+            }
+
+            for i, params in enumerate(init_params_list):
+                if not self.session.is_running:
+                    return
+
+                # 构建当前组的批次信息
+                batch_info = {
+                    **init_batch_info,
+                    "group_num": i + 1  # 1-based
+                }
+
+                try:
+                    # 1. 先显示参数表格（模拟正式模式的体验）
+                    await self._display_params_for_simulation(params, i, batch_info)
+
+                    # 2. 短暂延迟让用户看到表格
+                    await asyncio.sleep(0.5)
+
+                    # 3. 执行模拟计算
+                    fe = self._simulate_form_error(params)
+                    is_shrink = fe > self.algo_settings.shrink_threshold
+
+                    # 4. 自动"提交"结果（更新记录）
                     record = self.state.all_records[i]
                     record.form_error = fe
-                    record.is_shrink = fe > self.algo_settings.shrink_threshold
+                    record.is_shrink = is_shrink
 
-                    # 重新计算该参数的归一化值（避免使用循环外变量）
-                    x_norm_i = self._params_to_normalized(params)
-                    self.state.X_train.append(x_norm_i)
-                    self.state.y_train.append(fe)
+                    # 添加到训练集
+                    if not is_shrink:
+                        x_norm_i = self._params_to_normalized(params)
+                        self.state.X_train.append(x_norm_i)
+                        self.state.y_train.append(fe)
 
-                    await self.log(f"  模拟结果 [{i+1}/{len(init_params_list)}]: form_error={fe:.4f}")
+                    await self.log(f"  模拟结果 [{i+1}/{len(init_params_list)}]: form_error={fe:.4f}, is_shrink={is_shrink}")
+
+                    # 更新安全边界
+                    await self._update_safety_boundary(params, fe, is_shrink)
 
                     # 通知前端新记录和收敛曲线更新
                     await self._notify_new_record(record)
                     await self._notify_convergence_update()
+
+                    # 5. 短暂延迟让用户看到结果
+                    await asyncio.sleep(0.3)
+
                 except Exception as e:
                     await self.log(f"  错误 [{i+1}]: {str(e)}", "error")
                     import traceback
@@ -513,25 +546,60 @@ class AsyncExperimentRunner:
                 self._update_best_result()
 
         else:  # 模拟模式
-            for i, params in enumerate(rec_params_list):
-                fe = self._simulate_form_error(params)
+            await self.log(f">>> [模拟模式] 自动计算 {len(rec_params_list)} 组参数")
 
-                start_idx = len(self.state.all_records) - len(rec_params_list)
+            start_idx = len(self.state.all_records) - len(rec_params_list)
+
+            # 构建批次信息（迭代阶段批次号从1开始）
+            iter_batch_info = {
+                "batch_num": iteration + 1,
+                "total_groups": len(rec_params_list),
+                "batch_params": rec_params_list
+            }
+
+            for i, params in enumerate(rec_params_list):
+                if not self.session.is_running:
+                    return
+
+                # 构建当前组的批次信息
+                batch_info = {
+                    **iter_batch_info,
+                    "group_num": i + 1  # 1-based
+                }
+
+                # 1. 先显示参数表格
+                await self._display_params_for_simulation(params, start_idx + i, batch_info)
+
+                # 2. 短暂延迟让用户看到表格
+                await asyncio.sleep(0.5)
+
+                # 3. 执行模拟计算
+                fe = self._simulate_form_error(params)
+                is_shrink = fe > self.algo_settings.shrink_threshold
+
+                # 4. 自动"提交"结果
                 record = self.state.all_records[start_idx + i]
                 record.form_error = fe
-                record.is_shrink = fe > self.algo_settings.shrink_threshold
+                record.is_shrink = is_shrink
 
                 x_norm = self._params_to_normalized(params)
                 self.state.X_train.append(x_norm)
                 self.state.y_train.append(fe)
 
-                await self.log(f"  模拟结果: form_error={fe:.4f}")
+                await self.log(f"  模拟结果 [{i+1}/{len(rec_params_list)}]: form_error={fe:.4f}, is_shrink={is_shrink}")
+
+                # 更新安全边界
+                await self._update_safety_boundary(params, fe, is_shrink)
 
                 # 通知前端新记录和收敛曲线更新
                 await self._notify_new_record(record)
                 await self._notify_convergence_update()
 
-            self._update_best_result()
+                # 5. 短暂延迟让用户看到结果
+                await asyncio.sleep(0.3)
+
+                # 更新最佳结果
+                self._update_best_result()
 
     async def _request_evaluation(
         self,
@@ -561,6 +629,35 @@ class AsyncExperimentRunner:
             return result
         except asyncio.CancelledError:
             raise
+
+    async def _display_params_for_simulation(
+        self,
+        params: Dict[str, Any],
+        record_idx: int,
+        batch_info: Dict[str, Any]
+    ):
+        """在模拟模式下显示参数表格（不等待用户输入）
+
+        模拟 _request_evaluation 的消息发送，但不创建 Future 等待
+        """
+        # 格式化参数显示
+        display_params = self._format_params(params)
+
+        prompt = f"""[模拟模式] 自动计算中...
+{display_params}
+正在模拟计算面型评价指标..."""
+
+        # 发送消息到前端显示表格（使用 send_message 而不是 request_input）
+        message_data = {
+            "prompt": prompt,
+            "current_sample": params,
+            "batch_info": batch_info
+        }
+
+        await self.session.send_message(
+            WSMessageType.PARAMS_READY,
+            message_data
+        )
 
     def _build_safe_mask(self, params_list: List[Dict[str, Any]]) -> List[bool]:
         """构建安全掩码，过滤可能导致缩水的参数组合
