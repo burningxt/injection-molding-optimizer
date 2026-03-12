@@ -198,7 +198,9 @@ class AsyncExperimentRunner:
                 }
 
             # 请求用户输入（传递批次信息）
+            await self.log(f"[DEBUG] About to call _request_evaluation for idx={idx}, batch_info={batch_info}")
             result = await self._request_evaluation(record.params, idx, batch_info)
+            await self.log(f"[DEBUG] _request_evaluation returned for idx={idx}")
 
             # 更新记录
             record.form_error = result["form_error"]
