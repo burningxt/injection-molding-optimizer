@@ -43,6 +43,7 @@ class OptimizationSession:
         self._stop_event = asyncio.Event()
         self._log_queue: asyncio.Queue[str] = asyncio.Queue()
         self._input_future: Optional[asyncio.Future] = None
+        self._message_queue: List[tuple[WSMessageType, Optional[Dict]]] = []  # 待发送消息队列
 
     async def connect(self, websocket: WebSocket):
         """连接 WebSocket"""
@@ -58,6 +59,8 @@ class OptimizationSession:
                 "y_train": self.state.y_train,
                 "best_so_far": self._compute_best_so_far()
             })
+        # 发送队列中积压的消息（如恢复流程中产生的 params_ready 消息）
+        await self._flush_message_queue()
 
     async def disconnect(self):
         """断开连接"""
@@ -66,10 +69,13 @@ class OptimizationSession:
         self.websocket = None
 
     async def send_message(self, msg_type: WSMessageType, data: Optional[Dict] = None):
-        """发送消息到客户端"""
+        """发送消息到客户端，如果未连接则加入队列"""
         if self.websocket:
             message = WSMessage(type=msg_type, data=data)
             await self.websocket.send_json(message.model_dump(mode="json"))
+        else:
+            # WebSocket 未连接，将消息加入队列，连接成功后发送
+            self._message_queue.append((msg_type, data))
 
     async def send_log(self, message: str, level: str = "info"):
         """发送日志消息到前端并保存到文件"""
@@ -169,6 +175,24 @@ class OptimizationSession:
             current_best = min(current_best, y)
             best_so_far.append(current_best)
         return best_so_far
+
+    async def _flush_message_queue(self):
+        """发送队列中的所有消息
+
+        当 WebSocket 连接成功后调用，确保在连接断开期间产生的消息能够被送达。
+        特别是恢复流程中发送的 params_ready 消息。
+        """
+        if not self._message_queue:
+            return
+
+        await self.send_log(f"Sending {len(self._message_queue)} queued messages", "debug")
+
+        while self._message_queue:
+            msg_type, data = self._message_queue.pop(0)
+            # 此时 websocket 已连接，直接发送
+            if self.websocket:
+                message = WSMessage(type=msg_type, data=data)
+                await self.websocket.send_json(message.model_dump(mode="json"))
 
     async def save_checkpoint(self):
         """保存检查点"""
