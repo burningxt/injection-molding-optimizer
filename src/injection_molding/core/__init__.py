@@ -3,14 +3,14 @@
 包含贝叶斯优化、适应度计算、实验运行器等核心算法实现。
 """
 
-from .bayesian.base import OptimizerBase
+from .bayesian.base import BaseOptimizer
 from .bayesian.standard import StandardBOOptimizer
 from .runner import ExperimentRunner
-from .fitness import FitnessCalculator
+from .fitness import run_fitness_calculation
 
 __all__ = [
-    "OptimizerBase",
+    "BaseOptimizer",
     "StandardBOOptimizer",
     "ExperimentRunner",
-    "FitnessCalculator",
+    "run_fitness_calculation",
 ]
