@@ -70,12 +70,15 @@ class OptimizationSession:
 
     async def send_message(self, msg_type: WSMessageType, data: Optional[Dict] = None):
         """发送消息到客户端，如果未连接则加入队列"""
+        print(f"[DEBUG send_message] type={msg_type}, websocket_connected={self.websocket is not None}, queue_size={len(self._message_queue)}")
         if self.websocket:
             message = WSMessage(type=msg_type, data=data)
             await self.websocket.send_json(message.model_dump(mode="json"))
+            print(f"[DEBUG send_message] Message sent successfully")
         else:
             # WebSocket 未连接，将消息加入队列，连接成功后发送
             self._message_queue.append((msg_type, data))
+            print(f"[DEBUG send_message] Message queued, new_queue_size={len(self._message_queue)}")
 
     async def send_log(self, message: str, level: str = "info"):
         """发送日志消息到前端并保存到文件"""

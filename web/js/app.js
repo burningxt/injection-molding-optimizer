@@ -445,7 +445,13 @@ class OptimizationApp {
                 break;
 
             case 'params_ready':
-                this.updateInputSection(data);
+                console.log('[DEBUG] Received params_ready:', JSON.parse(JSON.stringify(data)));
+                try {
+                    this.updateInputSection(data);
+                    console.log('[DEBUG] updateInputSection completed successfully');
+                } catch (e) {
+                    console.error('[DEBUG] Error in updateInputSection:', e);
+                }
                 break;
 
             case 'state_update':
@@ -1234,11 +1240,18 @@ class OptimizationApp {
      * @param {Array} batchInfo.batch_params - 批次参数列表
      */
     renderBatchParamsTable(batchInfo) {
+        console.log('[DEBUG] renderBatchParamsTable called with:', JSON.parse(JSON.stringify(batchInfo)));
         const table = document.getElementById('batchParamsTable');
         const { group_num, batch_params } = batchInfo;
 
+        if (!batch_params || batch_params.length === 0) {
+            console.error('[DEBUG] batch_params is empty!');
+            return;
+        }
+
         // 获取所有参数名（从第一组参数提取）
         const paramKeys = Object.keys(batch_params[0]);
+        console.log('[DEBUG] paramKeys:', paramKeys);
 
         // 构建表头
         let theadHTML = '<thead><tr><th>组号</th>';
@@ -1270,6 +1283,7 @@ class OptimizationApp {
 
         // 设置表格内容
         table.innerHTML = theadHTML + tbodyHTML;
+        console.log('[DEBUG] Table rendered successfully');
     }
 
     submitEvaluation() {
