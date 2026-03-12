@@ -98,7 +98,7 @@ class OptimizationSession:
             # 文件写入失败不影响主流程
             print(f"[LogFileError] Failed to write log: {e}")
 
-    def request_input(
+    async def request_input(
         self,
         prompt: str,
         current_sample: Dict[str, Any],
@@ -121,11 +121,11 @@ class OptimizationSession:
         if batch_info:
             message_data["batch_info"] = batch_info
 
-        # 发送请求到前端
-        asyncio.create_task(self.send_message(
+        # 发送请求到前端（使用 await 确保消息送达）
+        await self.send_message(
             WSMessageType.PARAMS_READY,
             message_data
-        ))
+        )
 
         return self._input_future
 

@@ -551,8 +551,8 @@ class AsyncExperimentRunner:
 {display_params}
 输入面型评价指标（数值）："""
 
-        # 通过 WebSocket 请求输入，传递批次信息
-        future = self.session.request_input(prompt, params, batch_info)
+        # 通过 WebSocket 请求输入，传递批次信息（使用 await 确保消息送达）
+        future = await self.session.request_input(prompt, params, batch_info)
 
         try:
             result = await future

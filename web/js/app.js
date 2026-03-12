@@ -61,6 +61,22 @@ class OptimizationApp {
         setInterval(() => this.checkConnection(), 30000);
     }
 
+    /**
+     * 重置输入区域状态
+     * 在 WebSocket 连接成功或页面初始化时调用
+     */
+    resetInputSection() {
+        // 重置为等待状态，隐藏表格、进度和表单
+        document.getElementById('waitingPrompt').style.display = 'block';
+        document.getElementById('batchParamsTable').style.display = 'none';
+        document.getElementById('inputProgress').style.display = 'none';
+        document.getElementById('inputForm').style.display = 'none';
+
+        // 重置进度显示为默认值
+        document.getElementById('currentGroupNum').textContent = '1';
+        document.getElementById('totalGroups').textContent = '4';
+    }
+
     initUI() {
         // 件号选择
         document.getElementById('partSelect').addEventListener('change', (e) => {
@@ -369,6 +385,9 @@ class OptimizationApp {
         this.ws.onopen = () => {
             console.log('WebSocket connected');
             this.updateConnectionStatus(true);
+
+            // 重置输入区域状态，避免显示残留的上一次运行状态
+            this.resetInputSection();
 
             // 发送心跳
             this.heartbeatInterval = setInterval(() => {
