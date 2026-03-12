@@ -4,6 +4,6 @@
 """
 
 from .base import BaseOptimizer
-from .standard import BayesianOptimizer
+from .standard import StandardBOOptimizer
 
-__all__ = ["BaseOptimizer", "BayesianOptimizer"]
+__all__ = ["BaseOptimizer", "StandardBOOptimizer"]

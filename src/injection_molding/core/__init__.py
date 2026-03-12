@@ -4,13 +4,13 @@
 """
 
 from .bayesian.base import OptimizerBase
-from .bayesian.standard import BayesianOptimizer
+from .bayesian.standard import StandardBOOptimizer
 from .runner import ExperimentRunner
 from .fitness import FitnessCalculator
 
 __all__ = [
     "OptimizerBase",
-    "BayesianOptimizer",
+    "StandardBOOptimizer",
     "ExperimentRunner",
     "FitnessCalculator",
 ]
