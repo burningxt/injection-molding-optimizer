@@ -46,6 +46,7 @@ temp_*.json
 # Dev tools
 .opencode/
 .sisyphus/
+.claude/
 
 # Windows
 nul
