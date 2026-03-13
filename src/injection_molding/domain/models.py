@@ -78,6 +78,10 @@ class OptimizationState(BaseModel):
     y_train: List[float] = Field(default_factory=list)
     Ph_min_safe: Dict[Union[str, int, float], float] = Field(default_factory=dict)
 
+    # BO 模型状态（用于解释引擎）
+    bo_model_state: Optional[Dict[str, Any]] = None  # 序列化的 GP 模型状态
+    param_names: List[str] = Field(default_factory=list)  # 参数名称列表
+
     # 当前批次
     current_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -138,3 +142,89 @@ class LogMessageData(BaseModel):
     """日志消息数据"""
     level: Literal["info", "warning", "error", "debug"] = "info"
     message: str
+
+
+# ============================================================================
+# BO 解释引擎模型 (Phase 1)
+# ============================================================================
+
+class ParamSensitivity(BaseModel):
+    """单个参数的敏感性信息"""
+    param_name: str
+    length_scale: float
+    sensitivity_score: float
+    importance_rank: int
+    interpretation: str
+
+
+class SensitivityAnalysis(BaseModel):
+    """参数敏感性分析结果"""
+    rankings: List[ParamSensitivity] = Field(default_factory=list)
+    interpretation: str = ""
+    kernel_type: str = "Unknown"
+    is_fallback: bool = False
+    fallback_reason: Optional[str] = None
+
+
+class PredictionExplanation(BaseModel):
+    """预测质量解释"""
+    mean_prediction: float = 0.0
+    confidence_interval: tuple[float, float] = (0.0, 0.0)
+    std: float = 0.0
+    relative_to_best: str = ""
+
+
+class AcquisitionExplanation(BaseModel):
+    """采集函数解释"""
+    ei_value: float = 0.0
+    exploration_ratio: float = 0.0
+    exploitation_ratio: float = 0.0
+    explanation: str = ""
+
+
+class UncertaintyExplanation(BaseModel):
+    """不确定性解释"""
+    variance: float = 0.0
+    std: float = 0.0
+    relative_level: float = 0.0
+    level_description: str = ""
+    min_distance_to_train: float = 0.0
+    avg_distance_to_train: float = 0.0
+    description: str = ""
+
+
+class TrajectoryPoint(BaseModel):
+    """优化轨迹点"""
+    index: int
+    params: List[float]
+    form_error: float
+    iteration: int
+
+
+class TrajectoryAnalysis(BaseModel):
+    """优化轨迹分析"""
+    points: List[TrajectoryPoint] = Field(default_factory=list)
+    total_points: int = 0
+    best_point_index: int = 0
+    improvement_indices: List[int] = Field(default_factory=list)
+    description: str = ""
+
+
+class HeatmapData(BaseModel):
+    """热力图数据"""
+    x_param: str
+    y_param: str
+    x_param_idx: int
+    y_param_idx: int
+    x_values: List[float]
+    y_values: List[float]
+    values: List[List[float]]
+
+
+class ExplanationResult(BaseModel):
+    """BO 解释结果"""
+    prediction: PredictionExplanation = Field(default_factory=PredictionExplanation)
+    acquisition: AcquisitionExplanation = Field(default_factory=AcquisitionExplanation)
+    uncertainty: UncertaintyExplanation = Field(default_factory=UncertaintyExplanation)
+    sensitivity: SensitivityAnalysis = Field(default_factory=SensitivityAnalysis)
+    trajectory: TrajectoryAnalysis = Field(default_factory=TrajectoryAnalysis)

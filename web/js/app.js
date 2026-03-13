@@ -55,7 +55,18 @@ class OptimizationApp {
         this.initWebSocket();
         this.initAGGrid();
         this.initResizableLayout();
-        this.loadPartList();
+
+        // 确保页面完全加载后再加载件号列表
+        if (document.readyState === 'complete') {
+            // 页面已完全加载，直接执行
+            this.loadPartList();
+        } else {
+            // 等待页面完全加载（包括所有资源）
+            window.addEventListener('load', () => {
+                console.log('[init] Page fully loaded, loading part list...');
+                this.loadPartList();
+            });
+        }
 
         // 心跳检测
         setInterval(() => this.checkConnection(), 30000);
@@ -107,6 +118,9 @@ class OptimizationApp {
         document.getElementById('clearLogBtn').addEventListener('click', () => {
             this.clearLog();
         });
+
+        // 洞察面板标签页
+        this.initInsightsTabs();
 
         // 导出记录
         document.getElementById('exportRecordsBtn')?.addEventListener('click', () => {
@@ -389,6 +403,13 @@ class OptimizationApp {
             // 重置输入区域状态，避免显示残留的上一次运行状态
             this.resetInputSection();
 
+            // WebSocket连接成功后，确保件号列表已加载
+            const partSelect = document.getElementById('partSelect');
+            if (partSelect && partSelect.options.length <= 1) {
+                console.log('[WebSocket] Part list empty, reloading...');
+                this.loadPartList();
+            }
+
             // 发送心跳
             this.heartbeatInterval = setInterval(() => {
                 if (this.ws.readyState === WebSocket.OPEN) {
@@ -489,10 +510,23 @@ class OptimizationApp {
 
     async loadPartList() {
         try {
+            const select = document.getElementById('partSelect');
+            if (!select) {
+                console.error('[loadPartList] partSelect element not found');
+                return;
+            }
+
             const response = await fetch('/api/parts');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
-            const select = document.getElementById('partSelect');
+            // 保留当前选中的值
+            const currentValue = select.value;
+
+            // 清空并重建选项
             select.innerHTML = '<option value="">选择件号...</option>';
 
             data.parts.forEach(part => {
@@ -502,8 +536,15 @@ class OptimizationApp {
                 select.appendChild(option);
             });
 
+            // 恢复之前选中的值（如果仍然存在）
+            if (currentValue && data.parts.includes(currentValue)) {
+                select.value = currentValue;
+            }
+
             this.addLogEntry('info', `已加载 ${data.parts.length} 个件号配置`);
+            console.log('[loadPartList] Loaded', data.parts.length, 'parts:', data.parts);
         } catch (error) {
+            console.error('[loadPartList] Error:', error);
             this.addLogEntry('error', `加载件号列表失败: ${error.message}`);
         }
     }
@@ -1182,8 +1223,16 @@ class OptimizationApp {
         alert('💾 进度已保存！\n\n您可以安全关闭页面，稍后刷新页面并点击"继续寻优"即可恢复进度。');
     }
 
-    resetSession() {
+    async resetSession() {
         if (confirm('确定要清除历史并重新开始吗？')) {
+            // 通知服务器清除会话
+            if (this.sessionId) {
+                try {
+                    await fetch(`/api/session/${this.sessionId}/clear`, { method: 'POST' });
+                } catch (e) {
+                    console.log('清除服务器会话失败:', e);
+                }
+            }
             localStorage.removeItem('session_id');
             this.sessionId = null;
             location.reload();
@@ -2174,6 +2223,134 @@ class OptimizationApp {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             this.updateConnectionStatus(false);
         }
+    }
+
+    // ========== 洞察面板（标签页）==========
+
+    initInsightsTabs() {
+        // 标签切换
+        const tabs = document.querySelectorAll('.insights-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+
+                // 切换标签激活状态
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                // 切换内容面板
+                document.querySelectorAll('.insights-pane').forEach(pane => {
+                    pane.classList.remove('active');
+                });
+                document.getElementById(tabName + 'Pane').classList.add('active');
+
+                // 加载对应内容
+                if (tabName === 'sensitivity') {
+                    this.loadSensitivityAnalysis();
+                }
+            });
+        });
+
+        // 刷新敏感性分析按钮
+        const refreshBtn = document.getElementById('refreshSensitivityBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.loadSensitivityAnalysis(true);
+            });
+        }
+    }
+
+    async loadSensitivityAnalysis(force = false) {
+        const container = document.getElementById('sensitivityTable');
+        if (!container) return;
+
+        // 检查是否需要加载
+        if (!force && container.dataset.loaded === 'true') {
+            return;
+        }
+
+        // 显示加载状态
+        container.innerHTML = '<div class="sensitivity-fallback"><div class="icon">⏳</div><div class="message">正在分析参数敏感性...</div></div>';
+
+        try {
+            const response = await fetch(`/api/explain/sensitivity?session_id=${this.sessionId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.renderSensitivityAnalysis(data);
+            container.dataset.loaded = 'true';
+
+        } catch (error) {
+            console.error('[loadSensitivityAnalysis] Error:', error);
+            container.innerHTML = `<div class="sensitivity-fallback"><div class="icon">⚠️</div><div class="message">加载失败: ${error.message}</div></div>`;
+        }
+    }
+
+    renderSensitivityAnalysis(data) {
+        const container = document.getElementById('sensitivityTable');
+
+        // 检查是否是回退结果（数据不足等）
+        if (data.is_fallback) {
+            container.innerHTML = `
+                <div class="sensitivity-fallback">
+                    <div class="icon">📊</div>
+                    <div class="message">${data.interpretation}</div>
+                </div>
+            `;
+            return;
+        }
+
+        // 构建排名列表
+        const rankings = data.rankings || [];
+        if (rankings.length === 0) {
+            container.innerHTML = `
+                <div class="sensitivity-fallback">
+                    <div class="icon">📊</div>
+                    <div class="message">暂无敏感性数据</div>
+                </div>
+            `;
+            return;
+        }
+
+        // 生成HTML
+        let html = '<div class="sensitivity-ranking">';
+
+        rankings.forEach((item, index) => {
+            const displayName = PARAM_DISPLAY_NAMES[item.param_name] || item.param_name;
+            const rankClass = index < 3 ? 'top3' : '';
+            const barWidth = Math.round(item.sensitivity_score * 100);
+
+            html += `
+                <div class="sensitivity-item">
+                    <div class="sensitivity-rank ${rankClass}">${item.importance_rank}</div>
+                    <div class="sensitivity-info">
+                        <div class="sensitivity-name">${displayName}</div>
+                        <div class="sensitivity-meta">长度尺度: ${item.length_scale.toFixed(4)}</div>
+                    </div>
+                    <div class="sensitivity-score">
+                        <div class="sensitivity-bar">
+                            <div class="sensitivity-bar-fill" style="width: ${barWidth}%"></div>
+                        </div>
+                        <div class="sensitivity-label">${item.interpretation}</div>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+
+        // 添加说明文字
+        if (data.interpretation) {
+            html += `<div class="sensitivity-desc" style="margin-top: 1rem; padding: 0.75rem; background: #e7f5ff; border-radius: 6px; color: #1864ab;">${data.interpretation}</div>`;
+        }
+
+        container.innerHTML = html;
     }
 
     // ========== UI状态持久化 ==========

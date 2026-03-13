@@ -1,9 +1,14 @@
 """FastAPI 主应用"""
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form, BackgroundTasks
+
+# 加载 .env 文件
+load_dotenv()
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,17 +20,31 @@ from ...domain.models import (
     WSMessageType,
     OptimizationState,
     ExperimentRecord,
+    SensitivityAnalysis,
 )
 
 # 设置
 from pathlib import Path
 
 class Settings:
+    # 基础路径配置
     CHECKPOINT_DIR = Path("data/checkpoints")
     CONFIGS_DIR = Path("configs/parts")
     RECORDS_FILE = Path("data/records/experiment_records.xlsx")
     STATIC_DIR = Path("web")
     OUTPUT_DIR = Path("data/records")
+
+    # 服务器配置
+    HOST = os.getenv("HOST", "0.0.0.0")
+    PORT = int(os.getenv("PORT", "8000"))
+
+    # LLM 配置（支持 Deepseek 和其他提供商）
+    # 优先读取 DEEPSEEK_* 变量，其次读取 LLM_* 变量
+    LLM_API_KEY = os.getenv("DEEPSEEK_API_KEY") or os.getenv("LLM_API_KEY", "")
+    LLM_MODEL = os.getenv("DEEPSEEK_MODEL") or os.getenv("LLM_MODEL", "deepseek-chat")
+    LLM_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
+    LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+    LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
 
 settings = Settings()
 
@@ -340,6 +359,29 @@ async def save_records(session_id: str, request: dict):
         return {"error": str(e), "detail": traceback.format_exc()}
 
 
+@app.post("/api/session/{session_id}/clear")
+async def clear_session(session_id: str):
+    """清除会话（包括服务器端 checkpoint）"""
+    import shutil
+
+    # 从 session_manager 移除
+    session = session_manager.get_session(session_id)
+    if session:
+        await session_manager.remove_session(session_id)
+
+    # 删除 checkpoint 文件
+    checkpoint_path = settings.CHECKPOINT_DIR / f"{session_id}.json"
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+
+    # 删除初始数据文件
+    init_data_path = settings.OUTPUT_DIR / f"init_data_{session_id}.xlsx"
+    if init_data_path.exists():
+        init_data_path.unlink()
+
+    return {"success": True, "message": "会话已清除"}
+
+
 @app.post("/api/records/{session_id}/export")
 async def export_records(session_id: str, request: dict, background_tasks: BackgroundTasks):
     """导出实验记录为Excel文件"""
@@ -523,6 +565,91 @@ async def _run_optimization_safe(session: OptimizationSession, runner: AsyncExpe
     finally:
         session.is_running = False
         await session.save_checkpoint()
+
+
+@app.post("/api/explain/sensitivity")
+async def explain_sensitivity(session_id: str) -> SensitivityAnalysis:
+    """获取当前参数敏感性分析
+
+    基于 GP 模型的核函数长度尺度，分析各参数对结果的影响程度。
+    长度尺度越小，该参数越敏感（影响越大）。
+    """
+    import torch
+    from botorch.models import SingleTaskGP
+    from gpytorch.mlls import ExactMarginalLogLikelihood
+    from botorch.fit import fit_gpytorch_mll
+
+    from ...core.explainer import SensitivityAnalyzer
+
+    # 获取会话
+    session = session_manager.get_session(session_id)
+    if not session:
+        return SensitivityAnalysis(
+            interpretation="会话不存在，无法进行分析",
+            is_fallback=True,
+            fallback_reason="session_not_found",
+        )
+
+    if not session.state:
+        return SensitivityAnalysis(
+            interpretation="会话状态不存在，请先开始优化",
+            is_fallback=True,
+            fallback_reason="no_state",
+        )
+
+    # 检查训练数据
+    X_train_list = session.state.X_train
+    y_train_list = session.state.y_train
+
+    if len(X_train_list) < 5:
+        return SensitivityAnalysis(
+            interpretation=f"数据量不足（当前 {len(X_train_list)} 条），建议至少进行 5 轮实验后再查看敏感性分析",
+            is_fallback=True,
+            fallback_reason="insufficient_data",
+        )
+
+    try:
+        # 转换为 tensor
+        X_train = torch.tensor(X_train_list, dtype=torch.double)
+        y_train = torch.tensor(y_train_list, dtype=torch.double).unsqueeze(-1)
+
+        # 拟合 GP 模型（如果状态中没有保存）
+        if session.state.bo_model_state:
+            # TODO: 从状态恢复模型
+            # 目前简化处理：重新拟合
+            pass
+
+        # 数据标准化（与 StandardBOOptimizer 保持一致）
+        y_mean = y_train.mean()
+        y_std = y_train.std() + 1e-6
+        y_train_std = (y_train - y_mean) / y_std
+
+        # 创建并拟合 GP 模型
+        gp = SingleTaskGP(X_train, y_train_std)
+        mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
+        fit_gpytorch_mll(mll)
+
+        # 获取参数名称
+        param_names = session.state.param_names
+        if not param_names and session.state.part_config:
+            # 从配置中提取参数名称
+            param_names = [p.name for p in session.state.part_config.tunable]
+
+        # 创建分析器并分析
+        analyzer = SensitivityAnalyzer(gp, param_names)
+        result = analyzer.analyze()
+
+        return result
+
+    except Exception as e:
+        import traceback
+        print(f"[explain_sensitivity] Error: {e}")
+        print(traceback.format_exc())
+        return SensitivityAnalysis(
+            interpretation=f"分析过程中出现错误: {str(e)}",
+            is_fallback=True,
+            fallback_reason=f"error: {str(e)}",
+        )
 
 
 if __name__ == "__main__":

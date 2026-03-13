@@ -188,11 +188,53 @@
                 <!-- 右侧水平分隔线1：输入区和日志区之间 -->
                 <div class="resizer-horizontal" id="resizerInputLog"></div>
 
-                <!-- 日志区 -->
-                <div class="log-section">
-                    <h4>运行日志</h4>
-                    <div id="logContainer" class="log-container"></div>
-                    <button id="clearLogBtn" class="btn btn-small">清除日志</button>
+                <!-- 洞察面板（标签页） -->
+                <div class="insights-panel">
+                    <div class="insights-header">
+                        <div class="insights-tabs">
+                            <button class="insights-tab active" data-tab="log">运行日志</button>
+                            <button class="insights-tab" data-tab="prediction">预测质量</button>
+                            <button class="insights-tab" data-tab="acquisition">采集函数</button>
+                            <button class="insights-tab" data-tab="sensitivity">参数敏感</button>
+                            <button class="insights-tab" data-tab="trajectory">优化轨迹</button>
+                        </div>
+                    </div>
+                    <div class="insights-content">
+                        <!-- 运行日志 -->
+                        <div class="insights-pane active" id="logPane">
+                            <div id="logContainer" class="log-container"></div>
+                            <button id="clearLogBtn" class="btn btn-small">清除日志</button>
+                        </div>
+                        <!-- 预测质量 -->
+                        <div class="insights-pane" id="predictionPane">
+                            <div class="placeholder-content">
+                                <p>预测质量热力图（Phase 2 实现）</p>
+                            </div>
+                        </div>
+                        <!-- 采集函数 -->
+                        <div class="insights-pane" id="acquisitionPane">
+                            <div class="placeholder-content">
+                                <p>采集函数分析（Phase 3 实现）</p>
+                            </div>
+                        </div>
+                        <!-- 参数敏感 -->
+                        <div class="insights-pane" id="sensitivityPane">
+                            <div class="sensitivity-content">
+                                <div class="sensitivity-header">
+                                    <p class="sensitivity-desc">基于 GP 核函数长度尺度分析，长度尺度越小表示该参数越敏感</p>
+                                    <button id="refreshSensitivityBtn" class="btn btn-small">刷新分析</button>
+                                </div>
+                                <div id="sensitivityChart" class="sensitivity-chart"></div>
+                                <div id="sensitivityTable" class="sensitivity-table"></div>
+                            </div>
+                        </div>
+                        <!-- 优化轨迹 -->
+                        <div class="insights-pane" id="trajectoryPane">
+                            <div class="placeholder-content">
+                                <p>优化轨迹可视化（Phase 4 实现）</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 右侧水平分隔线2：日志区和实验记录之间 -->
