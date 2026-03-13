@@ -595,7 +595,11 @@ body {
 
 .sensitivity-chart {
     flex: 1;
-    min-height: 100px;
+    min-height: 0;
+}
+
+.sensitivity-chart:empty {
+    display: none;
 }
 
 .sensitivity-table {

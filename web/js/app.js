@@ -496,6 +496,8 @@ class OptimizationApp {
             case 'new_record':
                 console.log('[WebSocket] 收到 new_record 消息:', data);
                 this.addNewRecord(data.record);
+                // 自动刷新敏感度分析（非强制，允许缓存）
+                this.loadSensitivityAnalysis(false);
                 break;
         }
     }
@@ -2228,6 +2230,23 @@ class OptimizationApp {
     // ========== 洞察面板（标签页）==========
 
     initInsightsTabs() {
+        // 初始化敏感度分析区域为"待评估"状态
+        const sensitivityTable = document.getElementById('sensitivityTable');
+        if (sensitivityTable) {
+            sensitivityTable.innerHTML = `
+                <div class="sensitivity-fallback">
+                    <div class="icon">⏳</div>
+                    <div class="message">待评估</div>
+                    <div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">
+                        开始优化后将自动分析参数敏感性
+                    </div>
+                </div>
+            `;
+            console.log('[initInsightsTabs] 已设置初始状态为待评估');
+        } else {
+            console.warn('[initInsightsTabs] 未找到 sensitivityTable 元素');
+        }
+
         // 标签切换
         const tabs = document.querySelectorAll('.insights-tab');
         tabs.forEach(tab => {
@@ -2264,8 +2283,18 @@ class OptimizationApp {
         const container = document.getElementById('sensitivityTable');
         if (!container) return;
 
-        // 检查是否需要加载
-        if (!force && container.dataset.loaded === 'true') {
+        // 如果没有 session，显示待评估
+        if (!this.sessionId) {
+            container.innerHTML = `
+                <div class="sensitivity-fallback">
+                    <div class="icon">⏳</div>
+                    <div class="message">待评估</div>
+                    <div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">
+                        开始优化后将自动分析参数敏感性
+                    </div>
+                </div>
+            `;
+            container.dataset.loaded = 'false';
             return;
         }
 
@@ -2284,11 +2313,25 @@ class OptimizationApp {
 
             const data = await response.json();
             this.renderSensitivityAnalysis(data);
-            container.dataset.loaded = 'true';
 
         } catch (error) {
             console.error('[loadSensitivityAnalysis] Error:', error);
-            container.innerHTML = `<div class="sensitivity-fallback"><div class="icon">⚠️</div><div class="message">加载失败: ${error.message}</div></div>`;
+            // 如果是 session 不存在错误，重置 session 并显示待评估
+            if (error.message.includes('404') || error.message.includes('not found') || error.message.includes('Session')) {
+                this.sessionId = null;
+                localStorage.removeItem('session_id');
+                container.innerHTML = `
+                    <div class="sensitivity-fallback">
+                        <div class="icon">⏳</div>
+                        <div class="message">待评估</div>
+                        <div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">
+                            开始优化后将自动分析参数敏感性
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `<div class="sensitivity-fallback"><div class="icon">⚠️</div><div class="message">加载失败: ${error.message}</div></div>`;
+            }
         }
     }
 
