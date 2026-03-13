@@ -563,10 +563,20 @@ body {
 }
 
 /* 参数敏感分析样式 */
+.insights-pane#sensitivityPane {
+    display: none;
+}
+
+.insights-pane#sensitivityPane.active {
+    display: flex;
+    flex-direction: column;
+}
+
 .sensitivity-content {
     display: flex;
     flex-direction: column;
-    height: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 .sensitivity-header {
@@ -585,11 +595,12 @@ body {
 
 .sensitivity-chart {
     flex: 1;
-    min-height: 200px;
+    min-height: 100px;
 }
 
 .sensitivity-table {
-    margin-top: 1rem;
+    flex-shrink: 0;
+    margin-top: 0.5rem;
 }
 
 .sensitivity-ranking {
