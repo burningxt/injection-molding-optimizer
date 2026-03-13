@@ -214,15 +214,25 @@ class OptimizationSession:
     async def load_checkpoint(cls, session_id: str) -> Optional["OptimizationSession"]:
         """加载检查点"""
         checkpoint_path = settings.CHECKPOINT_DIR / f"{session_id}.pkl"
+        print(f"[load_checkpoint] Looking for checkpoint: {checkpoint_path}")
 
         if not checkpoint_path.exists():
+            print(f"[load_checkpoint] Checkpoint not found: {checkpoint_path}")
+            # 列出可用的检查点文件
+            if settings.CHECKPOINT_DIR.exists():
+                available = list(settings.CHECKPOINT_DIR.glob("*.pkl"))
+                print(f"[load_checkpoint] Available checkpoints: {[f.name for f in available]}")
             return None
 
-        session = cls(session_id)
-        with open(checkpoint_path, "rb") as f:
-            session.state = pickle.load(f)
-
-        return session
+        try:
+            session = cls(session_id)
+            with open(checkpoint_path, "rb") as f:
+                session.state = pickle.load(f)
+            print(f"[load_checkpoint] Successfully loaded checkpoint for {session_id}")
+            return session
+        except Exception as e:
+            print(f"[load_checkpoint] Error loading checkpoint: {e}")
+            return None
 
 
 class SessionManager:

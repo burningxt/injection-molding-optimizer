@@ -702,6 +702,57 @@ body {
     font-size: 0.95rem;
 }
 
+/* 预测质量热力图样式 */
+.prediction-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 0.5rem;
+}
+
+.prediction-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.prediction-desc {
+    margin: 0;
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.prediction-controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.prediction-controls label {
+    font-size: 0.85rem;
+    color: #495057;
+    font-weight: 500;
+}
+
+.prediction-controls select {
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    font-size: 0.85rem;
+    background: white;
+    min-width: 100px;
+}
+
+.heatmap-container {
+    flex: 1;
+    min-height: 0;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
 .log-entry {
     padding: 0.15rem 0;
 }

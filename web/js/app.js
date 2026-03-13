@@ -34,6 +34,13 @@ class OptimizationApp {
         this.recordsGrid = null;
         this.logEntries = [];
 
+        // 缓存数据（用于标签页切换时不重复请求）
+        this._sensitivityData = null;
+        this._heatmapData = null;
+        this._currentTab = 'convergence'; // 当前激活的标签页
+
+        console.log(`[OptimizationApp] Loaded session_id from localStorage: ${this.sessionId}`);
+
         this.init();
     }
 
@@ -416,6 +423,15 @@ class OptimizationApp {
                     this.ws.send(JSON.stringify({ type: 'ping' }));
                 }
             }, 30000);
+
+            // WebSocket 连接成功后，如果当前在敏感分析或预测质量标签页，自动刷新数据
+            if (this._currentTab === 'sensitivity') {
+                console.log('[WebSocket] Reconnected, refreshing sensitivity analysis...');
+                this.loadSensitivityAnalysis(true);
+            } else if (this._currentTab === 'prediction') {
+                console.log('[WebSocket] Reconnected, refreshing prediction heatmap...');
+                this.loadPredictionHeatmap(true);
+            }
         };
 
         this.ws.onmessage = (event) => {
@@ -443,9 +459,11 @@ class OptimizationApp {
 
         switch (type) {
             case 'session_created':
+                const oldSessionId = this.sessionId;
                 this.sessionId = data.session_id;
                 localStorage.setItem('session_id', this.sessionId);
                 document.getElementById('sessionInfo').textContent = `Session: ${this.sessionId}`;
+                console.log(`[handleMessage] Session created/changed: ${oldSessionId} -> ${this.sessionId}`);
                 break;
 
             case 'log_message':
@@ -656,6 +674,9 @@ class OptimizationApp {
 
             // 渲染参数列表
             this.renderParamList();
+
+            // 更新热力图参数选择器
+            this._updateHeatmapOptions();
 
             // 保存状态
             this.onStateChange();
@@ -1350,6 +1371,10 @@ class OptimizationApp {
             form_error: formError,
             is_shrink: isShrink
         });
+
+        // 清除分析数据缓存，以便下次加载时获取最新数据
+        this._sensitivityData = null;
+        this._heatmapData = null;
 
         // 不再隐藏整个输入区，只清空输入准备下一组
         document.getElementById('formErrorInput').value = '';
@@ -2247,6 +2272,9 @@ class OptimizationApp {
             console.warn('[initInsightsTabs] 未找到 sensitivityTable 元素');
         }
 
+        // 初始化预测质量热力图参数选择器
+        this._initHeatmapSelectors();
+
         // 标签切换
         const tabs = document.querySelectorAll('.insights-tab');
         tabs.forEach(tab => {
@@ -2264,8 +2292,11 @@ class OptimizationApp {
                 document.getElementById(tabName + 'Pane').classList.add('active');
 
                 // 加载对应内容
+                this._currentTab = tabName;
                 if (tabName === 'sensitivity') {
                     this.loadSensitivityAnalysis();
+                } else if (tabName === 'prediction') {
+                    this.loadPredictionHeatmap();
                 }
             });
         });
@@ -2276,6 +2307,84 @@ class OptimizationApp {
             refreshBtn.addEventListener('click', () => {
                 this.loadSensitivityAnalysis(true);
             });
+        }
+
+        // 刷新预测热力图按钮
+        const refreshHeatmapBtn = document.getElementById('refreshHeatmapBtn');
+        if (refreshHeatmapBtn) {
+            refreshHeatmapBtn.addEventListener('click', () => {
+                this.loadPredictionHeatmap(true);
+            });
+        }
+    }
+
+    /**
+     * 初始化热力图参数选择器
+     * @private
+     */
+    _initHeatmapSelectors() {
+        const xSelect = document.getElementById('heatmapXParam');
+        const ySelect = document.getElementById('heatmapYParam');
+        if (!xSelect || !ySelect) return;
+
+        // 保存引用以便后续使用
+        this.heatmapXSelect = xSelect;
+        this.heatmapYSelect = ySelect;
+
+        // 当参数配置加载后填充选项
+        this._updateHeatmapOptions();
+
+        // 监听参数变化
+        xSelect.addEventListener('change', () => {
+            // 确保X和Y不选择同一个参数
+            if (xSelect.value === ySelect.value) {
+                const yOptions = Array.from(ySelect.options);
+                const nextOption = yOptions.find(o => o.value !== xSelect.value);
+                if (nextOption) {
+                    ySelect.value = nextOption.value;
+                }
+            }
+            this.loadPredictionHeatmap(true);
+        });
+
+        ySelect.addEventListener('change', () => {
+            // 确保X和Y不选择同一个参数
+            if (ySelect.value === xSelect.value) {
+                const xOptions = Array.from(xSelect.options);
+                const nextOption = xOptions.find(o => o.value !== ySelect.value);
+                if (nextOption) {
+                    xSelect.value = nextOption.value;
+                }
+            }
+            this.loadPredictionHeatmap(true);
+        });
+    }
+
+    /**
+     * 更新热力图参数选项
+     * @private
+     */
+    _updateHeatmapOptions() {
+        const xSelect = document.getElementById('heatmapXParam');
+        const ySelect = document.getElementById('heatmapYParam');
+        if (!xSelect || !ySelect || !this.partConfig?.tunable) return;
+
+        // 清空现有选项
+        xSelect.innerHTML = '';
+        ySelect.innerHTML = '';
+
+        // 添加参数选项（从 tunable 数组中提取参数名称）
+        const params = this.partConfig.tunable.map(p => p.name);
+        params.forEach((param, idx) => {
+            const name = PARAM_DISPLAY_NAMES[param] || param;
+            xSelect.add(new Option(name, idx));
+            ySelect.add(new Option(name, idx));
+        });
+
+        // 默认选择前两个不同参数
+        if (params.length >= 2) {
+            xSelect.selectedIndex = 0;
+            ySelect.selectedIndex = 1;
         }
     }
 
@@ -2295,6 +2404,14 @@ class OptimizationApp {
                 </div>
             `;
             container.dataset.loaded = 'false';
+            this._sensitivityData = null;
+            return;
+        }
+
+        // 如果有缓存且不是强制刷新，直接渲染缓存数据
+        if (!force && this._sensitivityData) {
+            console.log('[loadSensitivityAnalysis] Using cached data');
+            this.renderSensitivityAnalysis(this._sensitivityData);
             return;
         }
 
@@ -2312,26 +2429,16 @@ class OptimizationApp {
             }
 
             const data = await response.json();
+            // 缓存数据（仅缓存非回退结果）
+            if (!data.is_fallback || data.fallback_reason !== 'session_not_found') {
+                this._sensitivityData = data;
+            }
             this.renderSensitivityAnalysis(data);
 
         } catch (error) {
             console.error('[loadSensitivityAnalysis] Error:', error);
-            // 如果是 session 不存在错误，重置 session 并显示待评估
-            if (error.message.includes('404') || error.message.includes('not found') || error.message.includes('Session')) {
-                this.sessionId = null;
-                localStorage.removeItem('session_id');
-                container.innerHTML = `
-                    <div class="sensitivity-fallback">
-                        <div class="icon">⏳</div>
-                        <div class="message">待评估</div>
-                        <div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">
-                            开始优化后将自动分析参数敏感性
-                        </div>
-                    </div>
-                `;
-            } else {
-                container.innerHTML = `<div class="sensitivity-fallback"><div class="icon">⚠️</div><div class="message">加载失败: ${error.message}</div></div>`;
-            }
+            // 不再重置 sessionId，只显示错误信息
+            container.innerHTML = `<div class="sensitivity-fallback"><div class="icon">⚠️</div><div class="message">加载失败: ${error.message}</div><div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">点击刷新按钮重试</div></div>`;
         }
     }
 
@@ -2394,6 +2501,289 @@ class OptimizationApp {
         }
 
         container.innerHTML = html;
+    }
+
+    // ========== 预测质量热力图 ==========
+
+    async loadPredictionHeatmap(force = false) {
+        const container = document.getElementById('predictionHeatmap');
+        if (!container) return;
+
+        // 如果没有 session，显示待评估
+        if (!this.sessionId) {
+            container.innerHTML = `
+                <div class="sensitivity-fallback">
+                    <div class="icon">⏳</div>
+                    <div class="message">待评估</div>
+                    <div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">
+                        开始优化后将自动生成预测热力图
+                    </div>
+                </div>
+            `;
+            this._heatmapData = null;
+            return;
+        }
+
+        const xParam = document.getElementById('heatmapXParam')?.value || 0;
+        const yParam = document.getElementById('heatmapYParam')?.value || 1;
+
+        // 检查缓存：参数相同且有缓存数据时直接使用
+        if (!force && this._heatmapData &&
+            this._heatmapData.param_x_idx === parseInt(xParam) &&
+            this._heatmapData.param_y_idx === parseInt(yParam)) {
+            console.log('[loadPredictionHeatmap] Using cached data');
+            this.renderPredictionHeatmap(this._heatmapData);
+            return;
+        }
+
+        // 销毁旧的 ECharts 实例（避免 DOM 操作冲突）
+        const oldChart = echarts.getInstanceByDom(container);
+        if (oldChart) {
+            oldChart.dispose();
+        }
+
+        // 显示加载状态
+        container.innerHTML = '<div class="sensitivity-fallback"><div class="icon">⏳</div><div class="message">正在生成热力图...</div></div>';
+
+        try {
+            console.log(`[loadPredictionHeatmap] Requesting with session_id=${this.sessionId}, x_param=${xParam}, y_param=${yParam}`);
+            const response = await fetch(`/api/explain/prediction_heatmap?session_id=${this.sessionId}&x_param=${xParam}&y_param=${yParam}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            console.log(`[loadPredictionHeatmap] Response status: ${response.status}`);
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    throw new Error('会话不存在，请重新开始优化');
+                }
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // 检查是否有数据
+            if (!data.predictions || data.predictions.length === 0) {
+                container.innerHTML = `
+                    <div class="sensitivity-fallback">
+                        <div class="icon">📊</div>
+                        <div class="message">数据量不足</div>
+                        <div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">
+                            建议至少进行5轮实验后查看预测热力图
+                        </div>
+                    </div>
+                `;
+                this._heatmapData = null;
+                return;
+            }
+
+            // 缓存数据
+            this._heatmapData = data;
+            this.renderPredictionHeatmap(data);
+
+        } catch (error) {
+            console.error('[loadPredictionHeatmap] Error:', error);
+            // 不再重置 sessionId，只显示错误信息
+            container.innerHTML = `
+                <div class="sensitivity-fallback">
+                    <div class="icon">⚠️</div>
+                    <div class="message">加载失败: ${error.message}</div>
+                    <div style="font-size: 0.8rem; color: #868e96; margin-top: 0.5rem;">
+                        点击刷新按钮重试
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    renderPredictionHeatmap(data) {
+        const container = document.getElementById('predictionHeatmap');
+        if (!container) return;
+
+        // 确保容器有高度
+        if (container.clientHeight < 100) {
+            container.style.height = '400px';
+        }
+
+        // 清理容器内容（移除加载提示等）
+        if (container.innerHTML.includes('sensitivity-fallback')) {
+            container.innerHTML = '';
+        }
+
+        // 初始化或获取 ECharts 实例
+        let chart = echarts.getInstanceByDom(container);
+        if (!chart) {
+            chart = echarts.init(container);
+        }
+
+        // 获取参数显示名称
+        const xParamName = PARAM_DISPLAY_NAMES[data.param_x] || data.param_x;
+        const yParamName = PARAM_DISPLAY_NAMES[data.param_y] || data.param_y;
+
+        // 转换预测值为 ECharts 热力图格式 [x, y, value]
+        const heatmapData = [];
+        const predictions = data.predictions;
+        for (let i = 0; i < data.y_values.length; i++) {
+            for (let j = 0; j < data.x_values.length; j++) {
+                // ECharts 热力图: [x索引, y索引, 值]
+                heatmapData.push([j, i, predictions[i][j]]);
+            }
+        }
+
+        // 计算颜色范围
+        const allValues = predictions.flat();
+        const minValue = Math.min(...allValues);
+        const maxValue = Math.max(...allValues);
+
+        // 准备训练数据点(白色圆圈)
+        const trainingPoints = data.training_points.map(p => {
+            // 找到最接近的网格索引
+            const xIdx = this._findNearestIndex(data.x_values, p[data.param_x]);
+            const yIdx = this._findNearestIndex(data.y_values, p[data.param_y]);
+            return {
+                value: [xIdx, yIdx],
+                itemStyle: {
+                    color: 'white',
+                    borderColor: 'black',
+                    borderWidth: 1
+                }
+            };
+        });
+
+        // 准备当前最优点(红色星号)
+        const currentBestPoint = data.current_best ? [{
+            value: [
+                this._findNearestIndex(data.x_values, data.current_best[data.param_x]),
+                this._findNearestIndex(data.y_values, data.current_best[data.param_y])
+            ],
+            symbol: 'star',
+            symbolSize: 20,
+            itemStyle: {
+                color: '#ff0000',
+                borderColor: 'white',
+                borderWidth: 2,
+                shadowBlur: 10,
+                shadowColor: 'rgba(255, 0, 0, 0.5)'
+            }
+        }] : [];
+
+        const option = {
+            tooltip: {
+                position: 'top',
+                formatter: (params) => {
+                    if (params.seriesType === 'heatmap') {
+                        const x = data.x_values[params.data[0]];
+                        const y = data.y_values[params.data[1]];
+                        const val = params.data[2];
+                        return `
+                            <div style="font-weight:bold">${xParamName}: ${x.toFixed(3)}</div>
+                            <div style="font-weight:bold">${yParamName}: ${y.toFixed(3)}</div>
+                            <div>预测误差: ${val.toFixed(4)}</div>
+                        `;
+                    }
+                    return '';
+                }
+            },
+            grid: {
+                top: 30,
+                right: 80,  // 为颜色条留出空间
+                bottom: 50,
+                left: 60
+            },
+            xAxis: {
+                type: 'category',
+                data: data.x_values.map(v => v.toFixed(2)),
+                name: xParamName,
+                nameLocation: 'middle',
+                nameGap: 30,
+                axisLabel: {
+                    fontSize: 10,
+                    interval: Math.floor(data.x_values.length / 5)  // 只显示约6个标签
+                }
+            },
+            yAxis: {
+                type: 'category',
+                data: data.y_values.map(v => v.toFixed(2)),
+                name: yParamName,
+                nameLocation: 'middle',
+                nameGap: 40,
+                axisLabel: {
+                    fontSize: 10,
+                    interval: Math.floor(data.y_values.length / 5)
+                }
+            },
+            visualMap: {
+                min: minValue,
+                max: maxValue,
+                calculable: true,
+                orient: 'vertical',
+                right: 10,
+                top: 'center',
+                itemHeight: 200,
+                inRange: {
+                    // 蓝色(好) -> 青色 -> 黄色 -> 橙色 -> 红色(差)
+                    color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
+                },
+                text: ['高(差)', '低(好)'],
+                textStyle: {
+                    fontSize: 11
+                }
+            },
+            series: [
+                {
+                    name: '预测误差',
+                    type: 'heatmap',
+                    data: heatmapData,
+                    emphasis: {
+                        itemStyle: {
+                            shadowBlur: 10,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    }
+                },
+                {
+                    name: '已探索点',
+                    type: 'scatter',
+                    data: trainingPoints,
+                    symbolSize: 8,
+                    z: 10
+                },
+                {
+                    name: '当前最优点',
+                    type: 'scatter',
+                    data: currentBestPoint,
+                    z: 11
+                }
+            ]
+        };
+
+        chart.setOption(option, true);
+
+        // 响应式调整
+        if (!this._heatmapResizeHandler) {
+            this._heatmapResizeHandler = () => {
+                chart.resize();
+            };
+            window.addEventListener('resize', this._heatmapResizeHandler);
+        }
+    }
+
+    /**
+     * 找到数组中最接近目标值的索引
+     * @private
+     */
+    _findNearestIndex(arr, target) {
+        let minDiff = Infinity;
+        let bestIdx = 0;
+        for (let i = 0; i < arr.length; i++) {
+            const diff = Math.abs(arr[i] - target);
+            if (diff < minDiff) {
+                minDiff = diff;
+                bestIdx = i;
+            }
+        }
+        return bestIdx;
     }
 
     // ========== UI状态持久化 ==========

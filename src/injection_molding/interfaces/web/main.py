@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form, BackgroundTasks, HTTPException
 
 # 加载 .env 文件
 load_dotenv()
@@ -21,6 +21,7 @@ from ...domain.models import (
     OptimizationState,
     ExperimentRecord,
     SensitivityAnalysis,
+    PredictionHeatmapData,
 )
 
 # 设置
@@ -581,8 +582,20 @@ async def explain_sensitivity(session_id: str) -> SensitivityAnalysis:
 
     from ...core.explainer import SensitivityAnalyzer
 
-    # 获取会话
+    # 获取会话（先从内存获取，如果不存在则尝试从 checkpoint 加载）
+    print(f"[explain_sensitivity] Looking for session: {session_id}")
     session = session_manager.get_session(session_id)
+    if session:
+        print(f"[explain_sensitivity] Session found in memory")
+    else:
+        print(f"[explain_sensitivity] Session not in memory, trying checkpoint...")
+        session = await OptimizationSession.load_checkpoint(session_id)
+        if session:
+            session_manager.sessions[session_id] = session
+            print(f"[explain_sensitivity] Session {session_id} loaded from checkpoint")
+        else:
+            print(f"[explain_sensitivity] Checkpoint not found for {session_id}")
+
     if not session:
         return SensitivityAnalysis(
             interpretation="会话不存在，无法进行分析",
@@ -650,6 +663,155 @@ async def explain_sensitivity(session_id: str) -> SensitivityAnalysis:
             is_fallback=True,
             fallback_reason=f"error: {str(e)}",
         )
+
+
+@app.post("/api/explain/prediction_heatmap")
+async def explain_prediction_heatmap(
+    session_id: str,
+    x_param: int = 0,
+    y_param: int = 1,
+    grid_size: int = 50
+) -> PredictionHeatmapData:
+    """获取预测质量热力图数据
+
+    基于GP模型生成2D参数空间的form_error预测分布热力图。
+    帮助工程师理解参数空间中的质量分布和优化推荐的原因。
+    """
+    import torch
+    from botorch.models import SingleTaskGP
+    from gpytorch.mlls import ExactMarginalLogLikelihood
+    from botorch.fit import fit_gpytorch_mll
+
+    from ...core.explainer import PredictionVisualizer
+
+    # 获取会话（先从内存获取，如果不存在则尝试从 checkpoint 加载）
+    print(f"[explain_prediction_heatmap] Looking for session: {session_id}")
+    session = session_manager.get_session(session_id)
+    if session:
+        print(f"[explain_prediction_heatmap] Session found in memory")
+    else:
+        print(f"[explain_prediction_heatmap] Session not in memory, trying checkpoint...")
+        session = await OptimizationSession.load_checkpoint(session_id)
+        if session:
+            session_manager.sessions[session_id] = session
+            print(f"[explain_prediction_heatmap] Session {session_id} loaded from checkpoint")
+        else:
+            print(f"[explain_prediction_heatmap] Checkpoint not found for {session_id}")
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if not session.state:
+        raise HTTPException(status_code=400, detail="No optimization state available")
+
+    # 检查训练数据
+    X_train_list = session.state.X_train
+    y_train_list = session.state.y_train
+
+    if len(X_train_list) < 5:
+        return PredictionHeatmapData(
+            param_x="",
+            param_y="",
+            param_x_idx=x_param,
+            param_y_idx=y_param,
+            x_values=[],
+            y_values=[],
+            predictions=[],
+            variance=[],
+            x_range=(0.0, 1.0),
+            y_range=(0.0, 1.0),
+            training_points=[],
+            current_best=None,
+        )
+
+    try:
+        # 转换为tensor
+        X_train = torch.tensor(X_train_list, dtype=torch.double)
+        y_train_raw = torch.tensor(y_train_list, dtype=torch.double).unsqueeze(-1)
+
+        # 检查输入数据
+        if torch.isnan(X_train).any():
+            print(f"[explain_prediction_heatmap] X_train contains NaN: {X_train}")
+            raise ValueError("X_train contains NaN values")
+        if torch.isnan(y_train_raw).any():
+            print(f"[explain_prediction_heatmap] y_train_raw contains NaN: {y_train_raw}")
+            raise ValueError("y_train_raw contains NaN values")
+
+        # 获取参数名称
+        param_names = session.state.param_names
+        if not param_names and session.state.part_config:
+            param_names = [p.name for p in session.state.part_config.tunable]
+
+        # 参数索引有效性检查
+        d = X_train.shape[1]
+        if x_param < 0 or x_param >= d:
+            x_param = 0
+        if y_param < 0 or y_param >= d:
+            y_param = min(1, d - 1)
+        if x_param == y_param:
+            y_param = (x_param + 1) % d
+
+        # 应用对数变换(与standard.py一致)
+        # y_train_raw存储的是-form_error，所以-fe_values = y_train_raw
+        fe_values = -y_train_raw
+
+        # 检查 fe_values 是否为正
+        if (fe_values <= 0).any():
+            print(f"[explain_prediction_heatmap] Warning: fe_values <= 0: min={fe_values.min().item()}")
+            fe_values = torch.clamp(fe_values, min=1e-8)
+
+        log_fe = torch.log(fe_values + 1e-6)
+        train_y_log = -log_fe
+
+        # 检查对数变换后的值
+        if torch.isnan(train_y_log).any():
+            print(f"[explain_prediction_heatmap] train_y_log contains NaN after log transform")
+            raise ValueError("train_y_log contains NaN values")
+
+        # 标准化
+        y_mean = train_y_log.mean().item()
+        y_std = train_y_log.std().item()
+
+        # 处理标准差为0的情况
+        if y_std < 1e-8:
+            print(f"[explain_prediction_heatmap] Warning: y_std is too small ({y_std}), using fallback")
+            y_std = 1.0
+
+        train_Y_std = (train_y_log - y_mean) / y_std
+
+        # 检查标准化后的值
+        if torch.isnan(train_Y_std).any():
+            print(f"[explain_prediction_heatmap] train_Y_std contains NaN after standardization")
+            raise ValueError("train_Y_std contains NaN values")
+
+        # 创建并拟合GP模型
+        gp = SingleTaskGP(X_train, train_Y_std)
+        mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
+        fit_gpytorch_mll(mll)
+
+        # 创建可视化器并生成热力图
+        visualizer = PredictionVisualizer(
+            model=gp,
+            X_train=X_train,
+            y_train=train_Y_std,
+            param_names=param_names,
+            y_mean=y_mean,
+            y_std=y_std,
+        )
+
+        heatmap_data = visualizer.generate_heatmap(
+            x_param_idx=x_param,
+            y_param_idx=y_param,
+            grid_size=grid_size,
+        )
+
+        return heatmap_data
+
+    except Exception as e:
+        import traceback
+        print(f"[explain_prediction_heatmap] Error: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to generate heatmap: {str(e)}")
 
 
 if __name__ == "__main__":

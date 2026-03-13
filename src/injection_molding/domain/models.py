@@ -1,6 +1,6 @@
 """Pydantic 数据模型"""
 
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
@@ -219,6 +219,26 @@ class HeatmapData(BaseModel):
     x_values: List[float]
     y_values: List[float]
     values: List[List[float]]
+
+
+class PredictionHeatmapData(BaseModel):
+    """预测质量热力图数据
+
+    用于展示GP模型预测的form_error在2D参数空间中的分布。
+    坐标值使用归一化空间[0,1]，前端根据参数实际范围进行转换显示。
+    """
+    param_x: str                       # X轴参数名
+    param_y: str                       # Y轴参数名
+    param_x_idx: int                   # X轴参数索引
+    param_y_idx: int                   # Y轴参数索引
+    x_values: List[float]              # X轴取值（归一化空间[0,1]）
+    y_values: List[float]              # Y轴取值（归一化空间[0,1]）
+    predictions: List[List[float]]     # 预测值网格 [y][x]，已反变换为原始form_error
+    variance: List[List[float]]        # 方差网格 [y][x]
+    x_range: Tuple[float, float]       # X轴归一化范围 (通常0,1)
+    y_range: Tuple[float, float]       # Y轴归一化范围 (通常0,1)
+    training_points: List[Dict[str, Any]]  # 训练数据点 [{param_x, param_y, form_error}]
+    current_best: Optional[Dict[str, float]] = None  # 当前最优点坐标
 
 
 class ExplanationResult(BaseModel):

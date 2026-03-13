@@ -2,8 +2,10 @@
 
 from .base import BOExplainer
 from .sensitivity import SensitivityAnalyzer
+from .prediction_viz import PredictionVisualizer
 
 __all__ = [
     "BOExplainer",
     "SensitivityAnalyzer",
+    "PredictionVisualizer",
 ]

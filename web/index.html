@@ -207,8 +207,18 @@
                         </div>
                         <!-- 预测质量 -->
                         <div class="insights-pane" id="predictionPane">
-                            <div class="placeholder-content">
-                                <p>预测质量热力图（Phase 2 实现）</p>
+                            <div class="prediction-content">
+                                <div class="prediction-header">
+                                    <p class="prediction-desc">GP模型预测的form_error分布，蓝色区域表示预测质量较好</p>
+                                    <button id="refreshHeatmapBtn" class="btn btn-small">刷新</button>
+                                </div>
+                                <div class="prediction-controls">
+                                    <label>X轴参数:</label>
+                                    <select id="heatmapXParam"></select>
+                                    <label>Y轴参数:</label>
+                                    <select id="heatmapYParam"></select>
+                                </div>
+                                <div id="predictionHeatmap" class="heatmap-container"></div>
                             </div>
                         </div>
                         <!-- 采集函数 -->

@@ -6,6 +6,7 @@ from botorch.models import SingleTaskGP
 
 from ...domain.models import ExplanationResult
 from .sensitivity import SensitivityAnalyzer
+from .prediction_viz import PredictionVisualizer
 
 
 class BOExplainer:
@@ -34,3 +35,6 @@ class BOExplainer:
 
         # 初始化子模块
         self.sensitivity_analyzer = SensitivityAnalyzer(model, param_names)
+        self.prediction_visualizer = PredictionVisualizer(
+            model, X_train, y_train, param_names
+        )
