@@ -530,12 +530,22 @@ body {
 }
 
 /* 日志容器（在洞察面板内） */
+.insights-pane#logPane {
+    display: none;
+}
+
+.insights-pane#logPane.active {
+    display: flex;
+    flex-direction: column;
+}
+
 #logPane .log-container {
     background: #212529;
     color: #e9ecef;
     padding: 1rem;
     border-radius: 6px;
-    height: 250px;
+    flex: 1;
+    min-height: 150px;
     overflow-y: auto;
     font-family: 'SF Mono', Monaco, monospace;
     font-size: 0.85rem;
